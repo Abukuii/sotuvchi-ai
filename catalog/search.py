@@ -4,6 +4,7 @@ Kichik va o'rta do'konlar (<= ~2000 mahsulot) uchun tashqi vektor bazasiz,
 tezkor va tushunarli leksik qidiruv. Katta hajm uchun pgvector/embedding
 qo'shish "keyingi qadam" sifatida README da yozilgan.
 """
+import re
 from dataclasses import dataclass
 
 from .models import Product
@@ -37,15 +38,24 @@ def score_product(query_tokens: list[str], product: Product) -> float:
     name_tokens = tokenize(product.name)
     meta_tokens = tokenize(f"{product.category} {product.sku} {product.description}")
     total = 0.0
+    word_matched = False
     for qt in query_tokens:
         best_name = max((_token_score(qt, pt) for pt in name_tokens), default=0.0)
         best_meta = max((_token_score(qt, pt) for pt in meta_tokens), default=0.0)
-        total += max(best_name * 2.0, best_meta)
-    return total
+        best = max(best_name * 2.0, best_meta)
+        total += best
+        if best > 0 and not qt.isdigit():
+            word_matched = True
+    # Faqat raqam mos kelgan (masalan "2 ta" yoki razmer "45") bo'lsa, mahsulot topilgan hisoblanmaydi
+    return total if word_matched else 0.0
+
+
+# Telefon raqamlari qidiruvga aralashmasligi uchun
+_PHONE_RE = re.compile(r"\+?\d[\d\s\-()]{7,}\d")
 
 
 def search_products(shop, query: str, limit: int = 5) -> list[Hit]:
-    query_tokens = keywords(query)
+    query_tokens = keywords(_PHONE_RE.sub(" ", query or ""))
     if not query_tokens:
         return []
     hits: list[Hit] = []
