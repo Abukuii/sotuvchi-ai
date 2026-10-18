@@ -1,0 +1,31 @@
+{% load static %}<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Sotuvchi AI{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'style.css' %}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="inner">
+      <a class="brand" href="{% url 'dashboard' %}">Sotuvchi AI</a>
+      {% if user.is_authenticated %}
+      <nav>
+        {% url 'dashboard' as u_dash %}{% url 'catalog' as u_cat %}{% url 'orders' as u_ord %}{% url 'conversations' as u_conv %}{% url 'shop_settings' as u_set %}
+        <a href="{{ u_dash }}" {% if request.path == u_dash %}class="active"{% endif %}>Boshqaruv</a>
+        <a href="{{ u_cat }}" {% if u_cat in request.path %}class="active"{% endif %}>Katalog</a>
+        <a href="{{ u_ord }}" {% if u_ord in request.path %}class="active"{% endif %}>Buyurtmalar</a>
+        <a href="{{ u_conv }}" {% if u_conv in request.path %}class="active"{% endif %}>Suhbatlar</a>
+        <a href="{{ u_set }}" {% if u_set in request.path %}class="active"{% endif %}>Sozlamalar</a>
+      </nav>
+      <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="linkbtn" type="submit">Chiqish</button></form>
+      {% endif %}
+    </div>
+  </header>
+  <main>
+    {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Katalog — Sotuvchi AI{% endblock %}
+{% block content %}
+<h1>Katalog</h1>
+
+<div class="card">
+  <h2>Excel yoki CSV yuklash</h2>
+  <p class="muted">Ustunlar: Nomi, Narxi (majburiy), Qoldiq, Toifa, Tavsif, Kod. Mavjud mahsulotlar (kod yoki nom bo'yicha) yangilanadi. <a href="{% url 'catalog_template' %}">Shablonni yuklab olish</a></p>
+  <form method="post" action="{% url 'catalog_upload' %}" enctype="multipart/form-data" class="row">{% csrf_token %}
+    <input type="file" name="file" accept=".xlsx,.csv" required style="max-width:340px">
+    <button type="submit">Yuklash</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <form method="get" class="row"><input type="text" name="q" value="{{ q }}" placeholder="Qidirish..." style="width:240px"><button class="secondary" type="submit">Qidirish</button></form>
+    <a class="btn" href="{% url 'product_new' %}">+ Mahsulot qo'shish</a>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>Nomi</th><th>Toifa</th><th>Narxi</th><th>Qoldiq</th><th>Holat</th><th></th></tr>
+    {% for p in page %}
+    <tr>
+      <td>{{ p.name }}{% if p.sku %} <span class="muted">({{ p.sku }})</span>{% endif %}</td>
+      <td>{{ p.category }}</td>
+      <td>{{ p.price|intcomma }}</td>
+      <td>{{ p.stock }}</td>
+      <td>{% if p.is_active %}<span class="badge delivered">faol</span>{% else %}<span class="badge">o'chiq</span>{% endif %}</td>
+      <td><a href="{% url 'product_edit' p.pk %}">Tahrirlash</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" class="muted">Mahsulot yo'q. Yuqoridan fayl yuklang yoki qo'lda qo'shing.</td></tr>
+    {% endfor %}
+  </table></div>
+  {% if page.has_other_pages %}
+  <div class="pager">
+    {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ q }}">← Oldingi</a>{% endif %}
+    <span class="muted">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ q }}">Keyingi →</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Boshqaruv — Sotuvchi AI{% endblock %}
+{% block content %}
+<h1>{{ shop.name }}</h1>
+
+<div class="grid">
+  <div class="card stat"><div class="num">{{ products_count }}</div><div class="label">Faol mahsulotlar</div></div>
+  <div class="card stat"><div class="num">{{ new_orders }}</div><div class="label">Yangi buyurtmalar</div></div>
+  <div class="card stat"><div class="num">{{ attention }}</div><div class="label">Egasi e'tibori kerak</div></div>
+</div>
+
+<div class="card">
+  <h2>Ishga tushirish</h2>
+  <ol>
+    <li>
+      {% if shop.bot_token %}✅{% else %}⬜{% endif %}
+      Telegram bot tokenini ulang — <a href="{% url 'shop_settings' %}">Sozlamalar</a>
+      {% if shop.bot_token %}<span class="muted">({{ shop.masked_token }}{% if shop.bot_username %}, @{{ shop.bot_username }}{% endif %})</span>{% endif %}
+    </li>
+    <li>
+      {% if products_count %}✅{% else %}⬜{% endif %}
+      Katalogni yuklang — <a href="{% url 'catalog' %}">Katalog</a>
+    </li>
+    <li>
+      {% if shop.owner_telegram_id %}✅{% else %}⬜{% endif %}
+      Buyurtma xabarlari uchun Telegramingizni ulang
+      {% if owner_link and not shop.owner_telegram_id %}— <a href="{{ owner_link }}" target="_blank" rel="noopener">shu havolani oching</a> va «Start» ni bosing{% elif not shop.bot_username %}<span class="muted">(bot ishga tushgach havola paydo bo'ladi)</span>{% endif %}
+    </li>
+    <li>⬜ Terminalda <code>python manage.py runbots</code> ni ishga tushiring.</li>
+  </ol>
+  {% if bot_link %}<p>Mijozlar uchun bot: <a href="{{ bot_link }}" target="_blank" rel="noopener">{{ bot_link }}</a></p>{% endif %}
+  {% if shop.owner_telegram_id %}
+  <form method="post" action="{% url 'regenerate_link' %}" class="row">{% csrf_token %}
+    <button class="secondary" type="submit">Telegram ulanishini qayta o'rnatish</button>
+  </form>
+  {% endif %}
+  <p class="muted">AI provayder: <code>{{ llm_provider }}</code>{% if llm_provider == "mock" %} (demo rejim: haqiqiy AI emas, .env da LLM_PROVIDER ni o'zgartiring){% endif %}</p>
+</div>
+
+<div class="card">
+  <h2>So'nggi buyurtmalar</h2>
+  {% if recent_orders %}
+  <div class="table-wrap"><table>
+    <tr><th>№</th><th>Mijoz</th><th>Jami</th><th>Holat</th><th>Sana</th></tr>
+    {% for o in recent_orders %}
+    <tr>
+      <td><a href="{% url 'order_detail' o.pk %}">#{{ o.pk }}</a></td>
+      <td>{{ o.customer_name }}</td>
+      <td>{{ o.total|intcomma }} so'm</td>
+      <td><span class="badge {{ o.status }}">{{ o.get_status_display }}</span></td>
+      <td>{{ o.created_at|date:"d.m.Y H:i" }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">Hali buyurtma yo'q.</p>{% endif %}
+</div>
+{% endblock %}

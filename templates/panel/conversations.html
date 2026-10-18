@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Suhbatlar — Sotuvchi AI{% endblock %}
+{% block content %}
+<h1>Suhbatlar</h1>
+<div class="card">
+  <p class="row">
+    <a class="btn {% if attention %}secondary{% endif %}" href="{% url 'conversations' %}">Hammasi</a>
+    <a class="btn {% if not attention %}secondary{% endif %}" href="?attention=1">E'tibor kerak</a>
+  </p>
+  <div class="table-wrap"><table>
+    <tr><th>Mijoz</th><th>Til</th><th>Oxirgi xabar</th><th></th></tr>
+    {% for c in page %}
+    <tr>
+      <td><a href="{% url 'conversation_detail' c.pk %}">{{ c.customer }}</a>{% if c.customer.username %} <span class="muted">@{{ c.customer.username }}</span>{% endif %}</td>
+      <td>{{ c.customer.language }}</td>
+      <td>{{ c.last_message_at|date:"d.m.Y H:i" }}</td>
+      <td>{% if c.needs_attention %}<span class="badge attn">e'tibor kerak</span>{% endif %}</td>
+    </tr>
+    {% empty %}<tr><td colspan="4" class="muted">Suhbat yo'q.</td></tr>{% endfor %}
+  </table></div>
+  {% if page.has_other_pages %}
+  <div class="pager">
+    {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}{% if attention %}&attention=1{% endif %}">← Oldingi</a>{% endif %}
+    <span class="muted">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a href="?page={{ page.next_page_number }}{% if attention %}&attention=1{% endif %}">Keyingi →</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

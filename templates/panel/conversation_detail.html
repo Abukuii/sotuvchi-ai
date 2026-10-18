@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Suhbat — Sotuvchi AI{% endblock %}
+{% block content %}
+<h1>{{ conv.customer }}{% if conv.customer.username %} <span class="muted">@{{ conv.customer.username }}</span>{% endif %}</h1>
+<div class="card">
+  {% if conv.needs_attention %}
+  <form method="post" class="row" style="margin-bottom:12px">{% csrf_token %}
+    <span class="badge attn">e'tibor kerak</span>
+    <input type="hidden" name="resolve" value="1">
+    <button class="secondary" type="submit">Hal qilindi deb belgilash</button>
+  </form>
+  {% endif %}
+  <div class="chat">
+    {% for m in chat %}
+    <div class="bubble {{ m.role }}">{{ m.text }}<small>{{ m.created_at|date:"d.m H:i" }}</small></div>
+    {% endfor %}
+  </div>
+</div>
+<a class="btn secondary" href="{% url 'conversations' %}">Orqaga</a>
+{% endblock %}

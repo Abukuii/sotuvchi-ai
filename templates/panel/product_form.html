@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Mahsulot — Sotuvchi AI{% endblock %}
+{% block content %}
+<h1>{% if product %}Mahsulotni tahrirlash{% else %}Yangi mahsulot{% endif %}</h1>
+<div class="card">
+  <form method="post">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <div class="row"><button type="submit">Saqlash</button><a class="btn secondary" href="{% url 'catalog' %}">Bekor qilish</a></div>
+  </form>
+  {% if product %}
+  <form method="post" action="{% url 'product_delete' product.pk %}" onsubmit="return confirm('Mahsulotni o\'chirasizmi?')" style="margin-top:16px">{% csrf_token %}
+    <button class="danger" type="submit">O'chirish</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
