@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 
 from catalog.models import Product
 
+from .crypto import token_hash
 from .models import Shop
 
 TOKEN_RE = re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{30,50}$")
@@ -26,30 +27,42 @@ class SignupForm(UserCreationForm):
 
 
 class ShopForm(forms.ModelForm):
+    # Model maydoni emas: token shifrlanib saqlanadi (view da qo'lda o'rnatiladi)
     bot_token = forms.CharField(
         label="Telegram bot tokeni",
         required=False,
         widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "off"}),
         help_text="@BotFather dan olingan token. Bo'sh qoldirsangiz, joriy token o'zgarmaydi.",
     )
+    remove_token = forms.BooleanField(
+        label="Joriy tokenni o'chirish (botni uzish)", required=False
+    )
 
     class Meta:
         model = Shop
-        fields = ["name", "bot_token", "default_language", "delivery_info", "work_hours", "extra_instructions", "is_active"]
+        fields = ["name", "default_language", "delivery_info", "work_hours", "extra_instructions", "is_active"]
         widgets = {
             "delivery_info": forms.Textarea(attrs={"rows": 3}),
             "extra_instructions": forms.Textarea(attrs={"rows": 3}),
         }
 
+    field_order = ["name", "bot_token", "remove_token", "default_language", "delivery_info", "work_hours", "extra_instructions", "is_active"]
+
     def clean_bot_token(self):
         token = (self.cleaned_data.get("bot_token") or "").strip()
         if not token:
-            return self.instance.bot_token  # o'zgartirilmaydi
+            return ""
         if not TOKEN_RE.match(token):
             raise forms.ValidationError("Token formati noto'g'ri. Namuna: 123456789:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-        if Shop.objects.filter(bot_token=token).exclude(pk=self.instance.pk).exists():
+        if Shop.objects.filter(token_hash=token_hash(token)).exclude(pk=self.instance.pk).exists():
             raise forms.ValidationError("Bu token boshqa do'konga ulangan.")
         return token
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("bot_token") and cleaned.get("remove_token"):
+            raise forms.ValidationError("Yangi token kiritib, bir vaqtda uni o'chirib bo'lmaydi.")
+        return cleaned
 
 
 class CatalogUploadForm(forms.Form):
@@ -61,3 +74,19 @@ class ProductForm(forms.ModelForm):
         model = Product
         fields = ["name", "category", "price", "stock", "sku", "description", "is_active"]
         widgets = {"description": forms.Textarea(attrs={"rows": 3})}
+
+    def clean_price(self):
+        from django.conf import settings
+
+        price = self.cleaned_data["price"]
+        if price > settings.MAX_PRICE:
+            raise forms.ValidationError("Narx juda katta.")
+        return price
+
+    def clean_stock(self):
+        from django.conf import settings
+
+        stock = self.cleaned_data["stock"]
+        if stock > settings.MAX_STOCK:
+            raise forms.ValidationError("Qoldiq juda katta.")
+        return stock

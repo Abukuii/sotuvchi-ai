@@ -22,11 +22,19 @@ def env_bool(name: str, default: bool = False) -> bool:
 DEBUG = env_bool("DJANGO_DEBUG", False)
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
-if not SECRET_KEY:
+_PLACEHOLDER_KEYS = {"", "change-me-to-a-long-random-string", "dev-only-insecure-key-do-not-use-in-production"}
+if SECRET_KEY in _PLACEHOLDER_KEYS or len(SECRET_KEY) < 32:
     if DEBUG:
-        SECRET_KEY = "dev-only-insecure-key-do-not-use-in-production"
+        SECRET_KEY = SECRET_KEY if len(SECRET_KEY) >= 32 else "dev-only-insecure-key-do-not-use-in-production"
     else:
-        raise RuntimeError("DJANGO_SECRET_KEY o'rnatilmagan (.env.example ga qarang).")
+        raise RuntimeError(
+            "DJANGO_SECRET_KEY o'rnatilmagan yoki namuna qiymatida. "
+            "Yangi kalit: python -c \"import secrets; print(secrets.token_urlsafe(50))\""
+        )
+
+# Bot tokenlarini bazada shifrlash kaliti. Bo'sh bo'lsa SECRET_KEY dan hosil qilinadi.
+# Diqqat: bu kalit yo'qolsa yoki o'zgarsa, saqlangan tokenlarni qayta kiritish kerak bo'ladi.
+TOKEN_ENCRYPTION_KEY = os.environ.get("TOKEN_ENCRYPTION_KEY", "")
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
 
@@ -126,11 +134,34 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = env_bool("DJANGO_SECURE_COOKIES", True)
     CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
 SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+SECURE_REFERRER_POLICY = "same-origin"
+
+# Ixtiyoriy (sukut bo'yicha o'chiq): HTTPS orqasida ishlatish uchun
+if env_bool("DJANGO_BEHIND_PROXY", False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+if env_bool("DJANGO_FORCE_HTTPS", False):
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()]
 
 # Yuklanadigan Excel fayl chegaralari
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024  # 2 MB
+MAX_XLSX_UNCOMPRESSED_BYTES = 30 * 1024 * 1024  # zip-bomba himoyasi
 MAX_CATALOG_ROWS = 2000
+MAX_PRICE = 10**11  # so'm
+MAX_STOCK = 10**7
+FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_BYTES
+
+# Kirish va ro'yxatdan o'tishni qo'pol kuch (brute-force) hujumidan himoya
+LOGIN_MAX_ATTEMPTS = 5  # bitta IP + username uchun
+LOGIN_IP_MAX_ATTEMPTS = 30  # bitta IP uchun
+LOGIN_LOCK_SECONDS = 15 * 60
+SIGNUP_MAX_PER_HOUR = 10  # bitta IP dan
+# Faqat ishonchli reverse-proxy orqasida yoqing, aks holda IP soxtalashtirilishi mumkin
+TRUST_X_FORWARDED_FOR = env_bool("DJANGO_TRUST_X_FORWARDED_FOR", False)
 
 # --- LLM ---
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "mock").strip().lower()

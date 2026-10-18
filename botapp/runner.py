@@ -23,6 +23,8 @@ GREETING = {
     "uz": "Assalomu alaykum! Men «{shop}» do'koni yordamchisiman. Mahsulot, narx yoki buyurtma haqida yozing.",
     "ru": "Здравствуйте! Я помощник магазина «{shop}». Пишите о товарах, ценах или заказе.",
 }
+GENERIC_ERROR = "Kechirasiz, xatolik yuz berdi. Birozdan keyin qayta yozing. / Произошла ошибка, попробуйте позже."
+MAX_TELEGRAM_CHARS = 4000
 NON_TEXT = "Iltimos, savolingizni matn ko'rinishida yozing. / Пожалуйста, напишите текстом."
 OWNER_LINKED = "✅ Ulandi! Yangi buyurtmalar va muhim xabarlar endi shu yerga keladi."
 
@@ -47,12 +49,7 @@ def _get_shop(shop_id: int):
 
 @_db_task
 def _link_owner(shop_id: int, code: str, telegram_id: int) -> bool:
-    shop = Shop.objects.filter(pk=shop_id).first()
-    if not shop or not code or code != shop.owner_link_code:
-        return False
-    shop.owner_telegram_id = telegram_id
-    shop.save(update_fields=["owner_telegram_id"])
-    return True
+    return Shop.link_owner(shop_id, code, telegram_id)
 
 
 @_db_task
@@ -69,8 +66,21 @@ def _save_username(shop_id: int, username: str) -> None:
     Shop.objects.filter(pk=shop_id).update(bot_username=username[:64])
 
 
+# Bitta mijozning xabarlari ketma-ket ishlanadi (ikki marta "Ha" bosilsa ham poyga bo'lmasin)
+_user_locks: dict[tuple[int, int], asyncio.Lock] = {}
+_MAX_LOCKS = 10000
+
+
+def _lock_for(shop_id: int, user_id: int) -> asyncio.Lock:
+    if len(_user_locks) > _MAX_LOCKS:
+        for key in [k for k, v in _user_locks.items() if not v.locked()]:
+            del _user_locks[key]
+    return _user_locks.setdefault((shop_id, user_id), asyncio.Lock())
+
+
 def build_dispatcher(shop_id: int) -> Dispatcher:
     router = Router()
+    router.message.filter(F.chat.type == "private")  # guruh va kanallarda javob bermaydi
 
     @router.message(Command("start"))
     async def on_start(message: Message, command: CommandObject, bot: Bot):
@@ -94,12 +104,18 @@ def build_dispatcher(shop_id: int) -> Dispatcher:
             await bot.send_chat_action(message.chat.id, "typing")
         except TelegramAPIError:
             pass
-        reply, owner_id = await _process(
-            shop_id, user.id, user.username or "", user.full_name or "", message.text
-        )
+        try:
+            async with _lock_for(shop_id, user.id):
+                reply, owner_id = await _process(
+                    shop_id, user.id, user.username or "", user.full_name or "", message.text
+                )
+        except Exception:
+            logger.exception("Xabarni qayta ishlashda xato (shop=%s)", shop_id)
+            await message.answer(GENERIC_ERROR)
+            return
         if reply is None:
             return
-        await message.answer(reply.text)
+        await message.answer(reply.text[:MAX_TELEGRAM_CHARS])
         if reply.owner_notice:
             if owner_id:
                 try:
@@ -138,10 +154,8 @@ async def _run_one(shop_id: int, token: str, bad_tokens: dict[int, str]) -> None
 
 @_db_task
 def _active_shops() -> dict[int, str]:
-    return {
-        s.pk: s.bot_token
-        for s in Shop.objects.filter(is_active=True).exclude(bot_token="")
-    }
+    tokens = {s.pk: s.bot_token for s in Shop.objects.filter(is_active=True).exclude(token_encrypted="")}
+    return {pk: token for pk, token in tokens.items() if token}  # shifri ochilmaganlar o'tkazib yuboriladi
 
 
 async def supervise(refresh_seconds: int = 15) -> None:

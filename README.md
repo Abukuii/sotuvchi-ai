@@ -53,7 +53,8 @@ Bot sozlamalari (token, yoqish/o'chirish) o'zgarsa, `runbots` ~15 soniyada o'zi 
 
 | O'zgaruvchi | Izoh |
 |---|---|
-| `DJANGO_SECRET_KEY` | Majburiy (DEBUG=0 bo'lsa). Uzun tasodifiy qator |
+| `DJANGO_SECRET_KEY` | Majburiy (DEBUG=0 bo'lsa), kamida 32 belgi; namuna qiymat qabul qilinmaydi |
+| `TOKEN_ENCRYPTION_KEY` | Bot tokenlarini shifrlash kaliti (bo'sh = SECRET_KEY dan). O'zgarsa tokenlar qayta kiritiladi |
 | `DJANGO_DEBUG` | `1` mahalliy ishlab chiqish uchun |
 | `DJANGO_ALLOWED_HOSTS` | Vergul bilan ajratilgan hostlar |
 | `DATABASE_URL` | Bo'sh = SQLite. PostgreSQL: `postgres://user:pass@host:5432/db` |
@@ -68,6 +69,17 @@ Kalitlar kodda saqlanmaydi, `.env` esa `.gitignore` da.
 ## Excel shabloni
 
 Panelda **Katalog → Shablonni yuklab olish**. Ustunlar (o'zbek, rus yoki ingliz nomlari qabul qilinadi): `Nomi`, `Narxi` (majburiy), `Qoldiq`, `Toifa`, `Tavsif`, `Kod`. Qayta yuklanganda mavjud mahsulotlar kod yoki nom bo'yicha yangilanadi. Xato qatorlar o'tkazib yuboriladi va sabablari ko'rsatiladi.
+
+## Xavfsizlik choralari
+
+- **Bot tokenlari bazada shifrlangan** (Fernet), interfeysda maskalanadi va hech qachon qaytarilmaydi; takroriy tokenni baza rad etadi.
+- **Kirish va ro'yxatdan o'tish cheklangan:** 5 ta xato urinishdan keyin 15 daqiqa blok (IP+login), IP bo'yicha umumiy chegara, soatiga 10 ta ro'yxatdan o'tish.
+- **Har bir egasi faqat o'z ma'lumotini ko'radi:** barcha ko'rinishlar do'kon bo'yicha filtrlanadi, begona obyekt 404 qaytaradi (testlangan).
+- **LLM ga ishonilmaydi:** narx/qoldiq/jami bazadan, `product_id` tekshiriladi, buyurtma faqat tasdiqdan keyin, ikki marta "Ha" bitta buyurtma beradi (suhbat qatori qulflanadi), javobdagi begona havolalar olib tashlanadi.
+- **Fayl yuklash:** hajm, ochilgan hajm (zip-bomba), qatorlar soni, narx/qoldiq chegaralari tekshiriladi.
+- **Bot faqat shaxsiy chatlarda** javob beradi; spamga qarshi daqiqada 12 xabar chegarasi.
+- Django: CSRF, `HttpOnly`/`SameSite` cookie, `X-Frame-Options: DENY`, `nosniff`; `DEBUG=0` da secure cookie; HTTPS sozlamalari `.env` orqali yoqiladi.
+- Mijoz ma'lumotini panelda o'chirish mumkin (buyurtma yozuvlari saqlanadi).
 
 ## Arxitektura
 
@@ -95,19 +107,21 @@ Asosiy qarorlar:
 python manage.py test
 ```
 
-56 ta test: Excel import (turli narx formatlari, xato qatorlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, noto'g'ri JSON, LLM xatosi, qoldiq o'zgarishi), panel va do'konlararo izolyatsiya.
+90 ta test: Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
 
 ## Cheklovlar (halol ro'yxat)
 
 - **Telegram integratsiyasi va Gemini/Groq/Ollama chaqiruvlari jonli sinalmagan.** Ular yozilgan va import/handler darajasida tekshirilgan, lekin haqiqiy token va kalit bilan kod yozish paytida ishga tushirilmagan. Birinchi ishga tushirishda kichik tuzatishlar kerak bo'lishi mumkin. Dvigatelning o'zi (`manage.py chat` va testlar) `mock` va soxta provayderlar bilan to'liq tekshirilgan.
 - `mock` rejim real AI emas: erkin muloqotni tushunmaydi.
-- Bot tokeni bazada ochiq matn ko'rinishida saqlanadi (interfeysda maskalanadi, loglarga chiqmaydi). Ishlab chiqarishda shifrlash (masalan, Fernet) yoki sir-saqlash xizmati kerak.
+- Bot tokeni shifrlangan, lekin kalit `SECRET_KEY`/`TOKEN_ENCRYPTION_KEY` dan olinadi: kalitni yo'qotsangiz tokenlarni qayta kiritasiz. Jiddiy ishlab chiqarishda sir-saqlash xizmati (Vault/KMS) yaxshiroq.
+- Kirish cheklovi Django keshida (jarayon ichida). Bir nechta server bo'lsa Redis/Memcached sozlash kerak. Parolni tiklash (email) yo'q.
+- PostgreSQL bilan jonli sinalmagan (testlar SQLite da). Qulflash (`select_for_update`) PostgreSQL da to'liq ishlaydi, SQLite da yozuvlar baribir ketma-ket bajariladi.
 - Qidiruv leksik: sinonimlar va xatolarni yaxshi tushunmaydi ("sumka" va "xalta"). Keyingi qadam: `pgvector` bilan embedding qidiruvi.
 - Polling: bitta jarayon barcha botlarni boshqaradi. Ko'p do'konda webhook va ishchi navbat (Celery/RQ) kerak. LLM chaqiruvi hozir oqim ichida sinxron.
 - Rus tilidagi so'rov o'zbekcha nomli mahsulotni (masalan, «рубашка» va «ko'ylak») faqat kichik katalogda topadi (to'liq ro'yxat LLM ga beriladi).
 - Faqat Telegram. Instagram, ovozli xabarlar, rasmlar, to'lov integratsiyasi yo'q.
 - Bitta egasiga bitta do'kon. Rollar/xodimlar yo'q.
-- Mijoz suhbatidagi shaxsiy ma'lumotlar (ism, telefon, manzil) bazada saqlanadi; ularni o'chirish/eksport qilish funksiyasi hali yo'q.
+- Mijoz ma'lumotlari (ism, telefon, manzil, suhbat) bazada ochiq saqlanadi; panelda o'chirish bor, eksport va avtomatik saqlash muddati yo'q. Buyurtmalardagi ism/telefon o'chirilmaydi.
 
 ## Foydalanilgan vositalar va kutubxonalar
 

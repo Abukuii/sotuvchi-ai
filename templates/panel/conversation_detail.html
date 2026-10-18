@@ -16,5 +16,10 @@
     {% endfor %}
   </div>
 </div>
-<a class="btn secondary" href="{% url 'conversations' %}">Orqaga</a>
+<div class="row">
+  <a class="btn secondary" href="{% url 'conversations' %}">Orqaga</a>
+  <form method="post" action="{% url 'conversation_delete' conv.pk %}" onsubmit="return confirm('Suhbat va mijoz ma\'lumotlarini butunlay o\'chirasizmi? Buyurtma yozuvlari saqlanadi.')">{% csrf_token %}
+    <button class="danger" type="submit">Mijoz ma'lumotlarini o'chirish</button>
+  </form>
+</div>
 {% endblock %}

@@ -2,10 +2,11 @@ from django.contrib.auth import views as auth_views
 from django.urls import path
 
 from . import views
+from .auth_views import ThrottledLoginView
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
-    path("login/", auth_views.LoginView.as_view(), name="login"),
+    path("login/", ThrottledLoginView.as_view(), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("signup/", views.signup, name="signup"),
     path("settings/", views.shop_settings, name="shop_settings"),
@@ -21,4 +22,5 @@ urlpatterns = [
     path("orders/<int:pk>/status/", views.order_status, name="order_status"),
     path("conversations/", views.conversations, name="conversations"),
     path("conversations/<int:pk>/", views.conversation_detail, name="conversation_detail"),
+    path("conversations/<int:pk>/delete/", views.conversation_delete, name="conversation_delete"),
 ]

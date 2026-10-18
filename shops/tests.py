@@ -1,4 +1,6 @@
 from django.contrib.auth.models import User
+from django.core.cache import cache
+from django.db import IntegrityError, transaction
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
@@ -9,10 +11,17 @@ from catalog.models import Product
 from conversations.models import Conversation, Customer
 from orders.models import Order
 
+from . import crypto
 from .models import Shop
 
 PASSWORD = "S3cure-pass-123"
 TOKEN = "123456789:AAH-abcdefghijklmnopqrstuvwxyz012345"
+
+
+class BaseTestCase(TestCase):
+    def setUp(self):
+        super().setUp()
+        cache.clear()  # throttle hisoblari testlar orasida aralashmasin
 
 
 def make_user(name):
@@ -21,7 +30,7 @@ def make_user(name):
     return user, shop
 
 
-class AuthTests(TestCase):
+class AuthTests(BaseTestCase):
     def test_pages_require_login(self):
         for name in ["dashboard", "catalog", "orders", "conversations", "shop_settings"]:
             response = self.client.get(reverse(name))
@@ -52,8 +61,9 @@ class AuthTests(TestCase):
         self.assertEqual(self.client.get(reverse("dashboard")).status_code, 302)
 
 
-class SettingsTests(TestCase):
+class SettingsTests(BaseTestCase):
     def setUp(self):
+        super().setUp()
         self.user, self.shop = make_user("a")
         self.client.force_login(self.user)
 
@@ -99,8 +109,9 @@ class SettingsTests(TestCase):
         self.assertIsNone(self.shop.owner_telegram_id)
 
 
-class CatalogViewTests(TestCase):
+class CatalogViewTests(BaseTestCase):
     def setUp(self):
+        super().setUp()
         self.user, self.shop = make_user("a")
         self.client.force_login(self.user)
 
@@ -133,8 +144,9 @@ class CatalogViewTests(TestCase):
         self.assertEqual(Product.objects.count(), 0)
 
 
-class TenantIsolationTests(TestCase):
+class TenantIsolationTests(BaseTestCase):
     def setUp(self):
+        super().setUp()
         self.a, self.shop_a = make_user("a")
         self.b, self.shop_b = make_user("b")
         self.product = Product.objects.create(shop=self.shop_a, name="Maxfiy", price=1000, stock=1)
@@ -163,7 +175,7 @@ class TenantIsolationTests(TestCase):
         self.assertNotContains(self.client.get(reverse("orders")), "+998900000000")
 
 
-class OrderViewTests(TestCase):
+class OrderViewTests(BaseTestCase):
     def test_status_change(self):
         user, shop = make_user("a")
         self.client.force_login(user)
@@ -175,3 +187,192 @@ class OrderViewTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, "delivered")
 
+
+
+class TokenSecurityTests(BaseTestCase):
+    def test_token_encrypted_at_rest(self):
+        _, shop = make_user("a")
+        shop.bot_token = TOKEN
+        shop.save()
+        raw = Shop.objects.values_list("token_encrypted", "token_hash").get(pk=shop.pk)
+        self.assertNotIn("AAH-", raw[0])
+        self.assertNotIn(TOKEN.split(":")[0], raw[0] + raw[1])
+        self.assertEqual(Shop.objects.get(pk=shop.pk).bot_token, TOKEN)
+
+    def test_db_enforces_unique_token(self):
+        _, a = make_user("a")
+        _, b = make_user("b")
+        a.bot_token = TOKEN
+        a.save()
+        b.bot_token = TOKEN
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            b.save()
+
+    def test_wrong_key_returns_empty_not_crash(self):
+        _, shop = make_user("a")
+        shop.bot_token = TOKEN
+        shop.save()
+        with self.settings(TOKEN_ENCRYPTION_KEY="boshqa-kalit-" * 4):
+            self.assertEqual(Shop.objects.get(pk=shop.pk).bot_token, "")
+        self.assertEqual(crypto.decrypt("garbage"), "")
+
+    def test_token_change_resets_owner_link(self):
+        user, shop = make_user("a")
+        shop.owner_telegram_id = 99
+        shop.save()
+        old_code = shop.owner_link_code
+        self.client.force_login(user)
+        self.client.post(reverse("shop_settings"), {"name": "X", "bot_token": TOKEN, "default_language": "uz", "is_active": "on"})
+        shop.refresh_from_db()
+        self.assertIsNone(shop.owner_telegram_id)
+        self.assertNotEqual(shop.owner_link_code, old_code)
+
+    def test_remove_token(self):
+        user, shop = make_user("a")
+        shop.bot_token = TOKEN
+        shop.save()
+        self.client.force_login(user)
+        self.client.post(reverse("shop_settings"), {"name": "X", "remove_token": "on", "default_language": "uz", "is_active": "on"})
+        shop.refresh_from_db()
+        self.assertFalse(shop.has_token)
+
+    def test_new_token_and_remove_together_rejected(self):
+        user, shop = make_user("a")
+        self.client.force_login(user)
+        response = self.client.post(
+            reverse("shop_settings"),
+            {"name": "X", "bot_token": TOKEN, "remove_token": "on", "default_language": "uz", "is_active": "on"},
+        )
+        self.assertEqual(response.status_code, 200)
+        shop.refresh_from_db()
+        self.assertFalse(shop.has_token)
+
+
+class OwnerLinkTests(BaseTestCase):
+    def test_link_code_is_single_use(self):
+        _, shop = make_user("a")
+        code = shop.owner_link_code
+        self.assertTrue(Shop.link_owner(shop.pk, code, 111))
+        shop.refresh_from_db()
+        self.assertEqual(shop.owner_telegram_id, 111)
+        self.assertNotEqual(shop.owner_link_code, code)
+        # Havola boshqa odamga tushsa ham egasini almashtira olmaydi
+        self.assertFalse(Shop.link_owner(shop.pk, code, 222))
+        shop.refresh_from_db()
+        self.assertEqual(shop.owner_telegram_id, 111)
+
+    def test_wrong_or_empty_code(self):
+        _, shop = make_user("a")
+        self.assertFalse(Shop.link_owner(shop.pk, "xato", 1))
+        self.assertFalse(Shop.link_owner(shop.pk, "", 1))
+
+    def test_code_of_other_shop_does_not_work(self):
+        _, a = make_user("a")
+        _, b = make_user("b")
+        self.assertFalse(Shop.link_owner(b.pk, a.owner_link_code, 5))
+
+
+class ThrottleTests(BaseTestCase):
+    def login(self, username, password):
+        return self.client.post(reverse("login"), {"username": username, "password": password})
+
+    def test_login_locks_after_failures_even_with_correct_password(self):
+        make_user("a")
+        for _ in range(5):
+            self.assertEqual(self.login("a", "xato-parol").status_code, 200)
+        self.assertEqual(self.login("a", PASSWORD).status_code, 429)
+
+    def test_other_username_not_locked_by_one_victim(self):
+        make_user("a")
+        make_user("b")
+        for _ in range(5):
+            self.login("a", "xato")
+        self.assertEqual(self.login("b", PASSWORD).status_code, 302)
+
+    def test_successful_login_resets_counter(self):
+        make_user("a")
+        for _ in range(4):
+            self.login("a", "xato")
+        self.assertEqual(self.login("a", PASSWORD).status_code, 302)
+        self.client.post(reverse("logout"))
+        for _ in range(4):
+            self.assertEqual(self.login("a", "xato").status_code, 200)
+
+    def test_ip_wide_limit(self):
+        with self.settings(LOGIN_IP_MAX_ATTEMPTS=3, LOGIN_MAX_ATTEMPTS=100):
+            for i in range(3):
+                self.login(f"user{i}", "xato")
+            self.assertEqual(self.login("user9", "xato").status_code, 429)
+
+    def test_signup_limit(self):
+        with self.settings(SIGNUP_MAX_PER_HOUR=2):
+            for i in range(2):
+                self.client.post(reverse("signup"), {"username": f"yangi{i}", "password1": PASSWORD, "password2": PASSWORD, "shop_name": "D"})
+                self.client.post(reverse("logout"))
+            response = self.client.post(reverse("signup"), {"username": "yangi9", "password1": PASSWORD, "password2": PASSWORD, "shop_name": "D"})
+        self.assertEqual(response.status_code, 429)
+        self.assertFalse(User.objects.filter(username="yangi9").exists())
+
+    def test_forwarded_header_ignored_unless_trusted(self):
+        make_user("a")
+        for i in range(5):
+            self.client.post(reverse("login"), {"username": "a", "password": "xato"}, HTTP_X_FORWARDED_FOR=f"10.0.0.{i}")
+        self.assertEqual(self.client.post(reverse("login"), {"username": "a", "password": PASSWORD}, HTTP_X_FORWARDED_FOR="10.9.9.9").status_code, 429)
+
+
+class ConversationDeleteTests(BaseTestCase):
+    def test_delete_keeps_orders_removes_customer_data(self):
+        user, shop = make_user("a")
+        customer = Customer.objects.create(shop=shop, telegram_id=7, full_name="Ali")
+        conv = Conversation.objects.create(customer=customer)
+        conv.messages.create(role="user", text="salom")
+        order = Order.objects.create(shop=shop, customer=customer, customer_name="Ali", phone="+998900000000", address="Y")
+        self.client.force_login(user)
+        self.client.post(reverse("conversation_delete", args=[conv.pk]))
+        self.assertFalse(Customer.objects.filter(pk=customer.pk).exists())
+        self.assertEqual(conv.messages.model.objects.count(), 0)
+        order.refresh_from_db()
+        self.assertIsNone(order.customer)
+
+    def test_cannot_delete_foreign_conversation_or_via_get(self):
+        a, shop_a = make_user("a")
+        b, _ = make_user("b")
+        conv = Conversation.objects.create(customer=Customer.objects.create(shop=shop_a, telegram_id=1))
+        self.client.force_login(b)
+        self.assertEqual(self.client.post(reverse("conversation_delete", args=[conv.pk])).status_code, 404)
+        self.client.force_login(a)
+        self.assertEqual(self.client.get(reverse("conversation_delete", args=[conv.pk])).status_code, 405)
+        self.assertTrue(Conversation.objects.filter(pk=conv.pk).exists())
+
+
+class AdminAndHeadersTests(BaseTestCase):
+    def test_admin_requires_staff_and_hides_tokens(self):
+        user, shop = make_user("a")
+        shop.bot_token = TOKEN
+        shop.save()
+        self.client.force_login(user)
+        self.assertEqual(self.client.get("/admin/shops/shop/").status_code, 302)  # staff emas
+        admin = User.objects.create_superuser("root", password=PASSWORD)
+        self.client.force_login(admin)
+        for path in ["/admin/shops/shop/", f"/admin/shops/shop/{shop.pk}/change/", "/admin/catalog/product/", "/admin/orders/order/", "/admin/conversations/conversation/"]:
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, path)
+            self.assertNotIn(TOKEN, response.content.decode(), path)
+            self.assertNotIn("token_encrypted", response.content.decode(), path)
+
+    def test_security_headers(self):
+        user, _ = make_user("a")
+        self.client.force_login(user)
+        response = self.client.get(reverse("dashboard"))
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+
+    def test_product_limits(self):
+        user, _ = make_user("a")
+        self.client.force_login(user)
+        response = self.client.post(reverse("product_new"), {"name": "A", "price": str(10**12), "stock": "1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Product.objects.count(), 0)
+        response = self.client.post(reverse("product_new"), {"name": "A", "price": "100", "stock": str(10**9)})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Product.objects.count(), 0)

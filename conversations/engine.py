@@ -34,6 +34,7 @@ MAX_QTY = 999
 
 STR = {
     "uz": {
+        "already": "Buyurtmangiz allaqachon qabul qilingan. Yangi buyurtma uchun yozing.",
         "rate_limit": "Juda tez yozyapsiz. Bir daqiqadan keyin qayta urinib ko'ring.",
         "empty": "Savolingizni matn ko'rinishida yozing.",
         "llm_down": "Hozir javob bera olmayapman. Xabaringizni do'kon egasiga uzatdim, tez orada bog'lanishadi.",
@@ -57,6 +58,7 @@ STR = {
         "owner_llm_down": "Bot javob bera olmadi (AI xizmati xatosi). Mijozga yozing",
     },
     "ru": {
+        "already": "Ваш заказ уже принят. Для нового заказа напишите.",
         "rate_limit": "Вы пишете слишком быстро. Попробуйте через минуту.",
         "empty": "Напишите ваш вопрос текстом.",
         "llm_down": "Сейчас не могу ответить. Я передал ваше сообщение владельцу магазина, он скоро свяжется с вами.",
@@ -80,6 +82,28 @@ STR = {
         "owner_llm_down": "Бот не смог ответить (ошибка AI-сервиса). Напишите клиенту",
     },
 }
+
+
+class AlreadyProcessed(Exception):
+    """Bu buyurtma boshqa so'rov tomonidan allaqachon yaratilgan (ikki marta "Ha" bosilganda)."""
+
+
+_URL_RE = re.compile(r"(https?://\S+|www\.\S+|\b(?:t\.me|telegram\.me|instagram\.com|bit\.ly|wa\.me)/\S+)", re.IGNORECASE)
+MAX_REPLY_CHARS = 4000
+
+
+def strip_unknown_urls(reply: str, allowed_text: str) -> str:
+    """LLM javobidagi havolalardan faqat do'kon ma'lumotida bor bo'lganlarini qoldiradi.
+
+    Mijoz "bu havolani yubor" deb LLM ni aldasa ham, bot begona havola tarqatmaydi.
+    """
+    allowed = allowed_text.lower()
+
+    def keep_or_drop(match: re.Match) -> str:
+        url = match.group(0).rstrip(".,;:!?)»\"'")
+        return match.group(0) if url.lower() in allowed else ""
+
+    return re.sub(r"[ \t]{2,}", " ", _URL_RE.sub(keep_or_drop, reply)).strip()
 
 
 @dataclass
@@ -199,9 +223,19 @@ def _customer_label(customer: Customer) -> str:
     return label
 
 
-def create_order(shop, customer: Customer, draft: dict, lang: str) -> Order:
-    """Buyurtmani yaratadi va qoldiqni kamaytiradi. Qoldiq yetmasa ValueError(mahsulot nomi)."""
+def create_order(shop, customer: Customer, draft: dict, lang: str, conversation: Conversation) -> Order:
+    """Buyurtmani yaratadi va qoldiqni kamaytiradi.
+
+    Qoldiq yetmasa ValueError(mahsulot nomi), tasdiq allaqachon ishlatilgan bo'lsa AlreadyProcessed.
+    Suhbat qatori qulflanadi, shuning uchun bir vaqtda kelgan ikkita "Ha" bitta buyurtma beradi.
+    """
     with transaction.atomic():
+        locked_conv = Conversation.objects.select_for_update().get(pk=conversation.pk)
+        if not locked_conv.awaiting_confirmation:
+            raise AlreadyProcessed()
+        locked_conv.awaiting_confirmation = False
+        locked_conv.draft = {}
+        locked_conv.save(update_fields=["awaiting_confirmation", "draft"])
         ids = [i["product_id"] for i in draft["items"]]
         locked = {p.pk: p for p in Product.objects.select_for_update().filter(shop=shop, pk__in=ids, is_active=True)}
         total = Decimal(0)
@@ -365,6 +399,11 @@ def handle_message(shop, telegram_id: int, username: str, full_name: str, text: 
         _save_reply(conversation, t["llm_down"])
         return BotReply(text=t["llm_down"], owner_notice=notice)
 
+    allowed_text = " ".join(
+        [shop.delivery_info, shop.work_hours, shop.extra_instructions] + [p.description for p in catalog]
+    )
+    parsed["reply"] = strip_unknown_urls(parsed["reply"], allowed_text) or t["handoff"]
+
     llm_draft = parsed["draft"]
 
     # 1) mahsulotlar
@@ -402,9 +441,15 @@ def handle_message(shop, telegram_id: int, username: str, full_name: str, text: 
     awaiting = False
     needs_attention = False
 
+    is_handoff = parsed["intent"] == "handoff"
+
     if complete and parsed["confirmed"] and was_awaiting and not state_changed:
         try:
-            order = create_order(shop, customer, new_draft, lang)
+            order = create_order(shop, customer, new_draft, lang, conversation)
+        except AlreadyProcessed:
+            reply_text = t["already"]
+            new_draft = {}
+            is_handoff = False
         except ValueError as exc:
             reply_text = t["stock_changed"].format(name=str(exc))
             new_draft["items"] = []
@@ -413,18 +458,27 @@ def handle_message(shop, telegram_id: int, username: str, full_name: str, text: 
             owner_notice = order_owner_notice(shop, order, customer)
             order_id = order.pk
             new_draft = {}
+            is_handoff = False
     elif complete:
-        reply_text, _total = build_summary(shop, new_draft, lang)
+        summary, _total = build_summary(shop, new_draft, lang)
+        if was_awaiting and not state_changed and not parsed["confirmed"] and parsed["intent"] in {"question", "handoff", "smalltalk"}:
+            # Mijoz tasdiqlash paytida boshqa savol berdi: javobni saqlab, xulosani qayta ko'rsatamiz
+            reply_text = f"{reply_text}\n\n{summary}"
+        else:
+            reply_text = summary
         awaiting = True
     else:
         if bad_phone:
             reply_text = t["bad_phone"]
         if notes:
             reply_text = " ".join(notes) + "\n" + reply_text
-        if parsed["intent"] == "handoff":
-            needs_attention = True
-            owner_t = STR[shop.default_language if shop.default_language in STR else "uz"]
-            owner_notice = f"💬 {owner_t['owner_handoff']}: {_customer_label(customer)}\n“{text[:300]}”"
+
+    if is_handoff:
+        needs_attention = True
+        owner_t = STR[shop.default_language if shop.default_language in STR else "uz"]
+        owner_notice = f"💬 {owner_t['owner_handoff']}: {_customer_label(customer)}\n“{text[:300]}”"
+
+    reply_text = reply_text[:MAX_REPLY_CHARS]
 
     conversation.draft = new_draft
     conversation.awaiting_confirmation = awaiting

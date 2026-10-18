@@ -14,6 +14,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        # HTTP kutubxonalari so'rov manzillarini loglamasin (maxfiy qiymatlar bo'lishi mumkin)
+        for noisy in ("httpx", "httpcore", "aiohttp"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
         self.stdout.write(self.style.SUCCESS("Botlar ishga tushmoqda... (to'xtatish: Ctrl+C)"))
         try:
             asyncio.run(supervise(options["refresh"]))

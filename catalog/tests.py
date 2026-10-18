@@ -121,3 +121,52 @@ class ImporterTests(TestCase):
         with self.settings(MAX_UPLOAD_BYTES=10):
             with self.assertRaises(ImportErrorBase):
                 import_catalog(self.shop, "k.xlsx", build_template_xlsx())
+
+
+class ImporterHardeningTests(TestCase):
+    def setUp(self):
+        self.shop = make_shop()
+
+    def test_csv_with_undetectable_delimiter_is_clean_error(self):
+        with self.assertRaises(ImportErrorBase):
+            import_catalog(self.shop, "a.csv", b"abc\n1\n")
+
+    def test_csv_default_comma_without_sniffing(self):
+        self.assertEqual(import_catalog(self.shop, "a.csv", b"Nomi,Narxi\nOlma,1000\n").created, 1)
+
+    def test_huge_price_and_stock_skipped_not_crash(self):
+        data = make_xlsx([["Nomi", "Narxi", "Qoldiq"], ["A", 10**20, 1], ["B", 100, 10**12], ["C", "inf", 1], ["D", 100, 1]])
+        result = import_catalog(self.shop, "k.xlsx", data)
+        self.assertEqual((result.created, result.skipped), (1, 3))
+
+    def test_zip_bomb_rejected(self):
+        import zipfile
+
+        src = zipfile.ZipFile(io.BytesIO(make_xlsx([["Nomi", "Narxi"], ["a", 1]])))
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+            for name in src.namelist():
+                content = src.read(name)
+                if name.endswith("sheet1.xml"):
+                    content = content.replace(b"</sheetData>", b"<!--" + b"A" * 5_000_000 + b"--></sheetData>")
+                zout.writestr(name, content)
+        self.assertLess(len(out.getvalue()), 100_000)  # kichik fayl...
+        with self.settings(MAX_XLSX_UNCOMPRESSED_BYTES=1_000_000):
+            with self.assertRaises(ImportErrorBase) as ctx:
+                import_catalog(self.shop, "b.xlsx", out.getvalue())  # ...lekin ochilganda katta
+        self.assertIn("katta", str(ctx.exception))
+        self.assertEqual(Product.objects.count(), 0)
+
+    def test_too_many_rows_rejected_but_trailing_blank_rows_fine(self):
+        rows = [["Nomi", "Narxi"]] + [[f"P{i}", 100] for i in range(10)]
+        with self.settings(MAX_CATALOG_ROWS=3):
+            with self.assertRaises(ImportErrorBase):
+                import_catalog(self.shop, "k.xlsx", make_xlsx(rows))
+        rows = [["Nomi", "Narxi"], ["A", 1], ["B", 2]] + [[None, None]] * 5
+        with self.settings(MAX_CATALOG_ROWS=3):
+            self.assertEqual(import_catalog(self.shop, "k.xlsx", make_xlsx(rows)).created, 2)
+
+    def test_long_description_truncated(self):
+        data = make_xlsx([["Nomi", "Narxi", "Tavsif"], ["A", 1, "x" * 10000]])
+        import_catalog(self.shop, "k.xlsx", data)
+        self.assertEqual(len(Product.objects.get().description), 2000)

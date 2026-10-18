@@ -1,5 +1,6 @@
+from django.conf import settings
 from django.contrib.auth.models import User
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from catalog.models import Product
 from shops.models import Shop
@@ -27,6 +28,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         username, password = options["username"], options["password"]
+        if not settings.DEBUG and password == "demo-parol-123":
+            raise CommandError("Ishlab chiqarishda standart demo parolni ishlatib bo'lmaydi: --password bering.")
         user, created = User.objects.get_or_create(username=username)
         if created:
             user.set_password(password)

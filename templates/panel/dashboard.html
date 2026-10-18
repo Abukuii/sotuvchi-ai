@@ -14,9 +14,9 @@
   <h2>Ishga tushirish</h2>
   <ol>
     <li>
-      {% if shop.bot_token %}✅{% else %}⬜{% endif %}
+      {% if shop.has_token %}✅{% else %}⬜{% endif %}
       Telegram bot tokenini ulang — <a href="{% url 'shop_settings' %}">Sozlamalar</a>
-      {% if shop.bot_token %}<span class="muted">({{ shop.masked_token }}{% if shop.bot_username %}, @{{ shop.bot_username }}{% endif %})</span>{% endif %}
+      {% if shop.has_token %}<span class="muted">({{ shop.masked_token }}{% if shop.bot_username %}, @{{ shop.bot_username }}{% endif %})</span>{% endif %}
     </li>
     <li>
       {% if products_count %}✅{% else %}⬜{% endif %}

@@ -9,7 +9,7 @@ from llm import LLMError, LLMProvider
 from orders.models import Order
 from shops.models import Shop
 
-from .engine import handle_message, normalize_phone, parse_llm_json
+from .engine import AlreadyProcessed, create_order, handle_message, normalize_phone, parse_llm_json, strip_unknown_urls
 from .models import Conversation, Message
 
 
@@ -266,3 +266,99 @@ class LLMSafetyTests(TestCase):
         say(shop, "salom", Spy(self.reply({}, intent="smalltalk")))
         self.assertNotIn("MAXFIY-MAHSULOT", captured["system"])
         self.assertIn("Erkaklar ko'ylagi", captured["system"])
+
+
+class ConfirmationFlowTests(TestCase):
+    def draft(self, shop, qty=1):
+        shirt = Product.objects.get(shop=shop, sku="KY-001")
+        return {
+            "items": [{"product_id": shirt.pk, "quantity": qty}],
+            "customer_name": "Ali",
+            "phone": "+998901234567",
+            "address": "Jizzax, Sharof Rashidov 5",
+        }
+
+    def reply(self, draft, **kw):
+        base = {"reply": "ok", "intent": "order", "draft": draft, "confirmed": False}
+        base.update(kw)
+        return base
+
+    def test_question_during_confirmation_keeps_answer_and_summary(self):
+        shop = make_shop(owner_tg=9)
+        d = self.draft(shop)
+        provider = FakeProvider(
+            self.reply(d),
+            self.reply(d, reply="Yetkazish 1 kunda.", intent="question"),
+        )
+        say(shop, "buyurtma", provider)
+        r = say(shop, "yetkazish qancha vaqt oladi?", provider)
+        self.assertIn("Yetkazish 1 kunda.", r.text)
+        self.assertIn("Hammasi to'g'rimi", r.text)
+        self.assertTrue(Conversation.objects.get().awaiting_confirmation)
+        self.assertIsNone(r.owner_notice)
+
+    def test_handoff_during_confirmation_notifies_owner(self):
+        shop = make_shop(owner_tg=9)
+        d = self.draft(shop)
+        provider = FakeProvider(self.reply(d), self.reply(d, reply="Egasiga uzataman", intent="handoff"))
+        say(shop, "buyurtma", provider)
+        r = say(shop, "chegirma bormi?", provider)
+        self.assertIn("Hammasi to'g'rimi", r.text)
+        self.assertIn("javob kutmoqda", r.owner_notice)
+        self.assertTrue(Conversation.objects.get().needs_attention)
+
+    def test_second_confirmation_does_not_duplicate_order(self):
+        shop = make_shop()
+        d = self.draft(shop)
+        provider = FakeProvider(self.reply(d), self.reply(d, confirmed=True))
+        say(shop, "buyurtma", provider)
+        say(shop, "ha", provider)
+        say(shop, "ha", provider)
+        self.assertEqual(Order.objects.count(), 1)
+        self.assertEqual(Product.objects.get(shop=shop, sku="KY-001").stock, 11)
+
+    def test_create_order_is_idempotent_against_stale_state(self):
+        """Ikki parallel so'rov bir xil eski holatni o'qigan bo'lsa ham, buyurtma bitta."""
+        shop = make_shop()
+        say(shop, "salom")
+        conv = Conversation.objects.get()
+        conv.awaiting_confirmation = True
+        conv.save()
+        stale = Conversation.objects.get(pk=conv.pk)  # ikkinchi so'rov ham "awaiting=True" ni ko'rgan
+        draft = self.draft(shop)
+        create_order(shop, conv.customer, draft, "uz", conv)
+        with self.assertRaises(AlreadyProcessed):
+            create_order(shop, conv.customer, draft, "uz", stale)
+        self.assertEqual(Order.objects.count(), 1)
+        self.assertEqual(Product.objects.get(shop=shop, sku="KY-001").stock, 11)
+
+
+class UrlFilterTests(TestCase):
+    def test_unit(self):
+        allowed = "To'lov https://pay.example.uz/click orqali. Kanal: t.me/mening_kanalim"
+        out = strip_unknown_urls("Mana https://evil.example/x va https://pay.example.uz/click hamda t.me/mening_kanalim, www.phish.com!", allowed)
+        self.assertNotIn("evil", out)
+        self.assertNotIn("phish", out)
+        self.assertIn("https://pay.example.uz/click", out)
+        self.assertIn("t.me/mening_kanalim", out)
+
+    def test_end_to_end_malicious_link_removed(self):
+        shop = make_shop()
+        bad = {"reply": "Chegirma uchun shu yerga o'ting: https://evil.example/pay?id=1", "intent": "question", "draft": {}, "confirmed": False}
+        r = say(shop, "chegirma bormi", FakeProvider(bad))
+        self.assertNotIn("evil.example", r.text)
+        self.assertIn("Chegirma uchun", r.text)
+
+    def test_reply_made_only_of_a_link_falls_back(self):
+        shop = make_shop()
+        bad = {"reply": "https://evil.example/x", "intent": "question", "draft": {}, "confirmed": False}
+        r = say(shop, "salom", FakeProvider(bad))
+        self.assertNotIn("evil", r.text)
+        self.assertTrue(r.text)
+
+    def test_owner_configured_link_is_kept(self):
+        shop = make_shop()
+        shop.delivery_info = "To'lov: https://pay.example.uz/click"
+        shop.save()
+        ok = {"reply": "To'lov: https://pay.example.uz/click", "intent": "question", "draft": {}, "confirmed": False}
+        self.assertIn("https://pay.example.uz/click", say(shop, "tolov", FakeProvider(ok)).text)

@@ -15,6 +15,7 @@ from catalog.models import Product
 from conversations.models import Conversation
 from orders.models import Order
 
+from . import throttle
 from .forms import CatalogUploadForm, ProductForm, ShopForm, SignupForm
 from .models import Shop
 
@@ -38,11 +39,17 @@ def signup(request):
     if request.user.is_authenticated:
         return redirect("dashboard")
     form = SignupForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        user = form.save()
-        login(request, user)
-        messages.success(request, "Xush kelibsiz! Avval bot tokenini ulang va katalogni yuklang.")
-        return redirect("shop_settings")
+    ip_key = f"signup-ip:{throttle.client_ip(request)}"
+    if request.method == "POST":
+        if throttle.count(ip_key) >= settings.SIGNUP_MAX_PER_HOUR:
+            form.add_error(None, "Bu manzildan juda ko'p ro'yxatdan o'tish urinishi bo'ldi. Keyinroq urinib ko'ring.")
+            return render(request, "registration/signup.html", {"form": form}, status=429)
+        if form.is_valid():
+            throttle.hit(ip_key, 3600)
+            user = form.save()
+            login(request, user)
+            messages.success(request, "Xush kelibsiz! Avval bot tokenini ulang va katalogni yuklang.")
+            return redirect("shop_settings")
     return render(request, "registration/signup.html", {"form": form})
 
 
@@ -65,13 +72,23 @@ def dashboard(request):
 @shop_required
 def shop_settings(request):
     shop = request.shop
-    old_token = shop.bot_token
     form = ShopForm(request.POST or None, instance=shop)
     if request.method == "POST" and form.is_valid():
         saved = form.save(commit=False)
-        if saved.bot_token != old_token:
+        new_token = form.cleaned_data.get("bot_token")
+        token_changed = False
+        if new_token and new_token != shop.bot_token:
+            saved.bot_token = new_token
+            token_changed = True
+        elif form.cleaned_data.get("remove_token"):
+            saved.bot_token = ""
+            token_changed = True
+        if token_changed:
             saved.bot_username = ""  # bot qayta ishga tushganda yangilanadi
         saved.save()
+        if token_changed:
+            # Egasining Telegram ulanishi eski bot bilan bog'liq edi: yangi botda qayta ulash kerak
+            saved.regenerate_link_code()
         messages.success(request, "Sozlamalar saqlandi. Bot o'zgarishlarni ~15 soniyada qabul qiladi.")
         return redirect("shop_settings")
     return render(request, "panel/settings.html", {"form": form, "shop": shop})
@@ -189,6 +206,16 @@ def conversations(request):
         qs = qs.filter(needs_attention=True)
     page = Paginator(qs, 30).get_page(request.GET.get("page"))
     return render(request, "panel/conversations.html", {"page": page, "attention": request.GET.get("attention") == "1"})
+
+
+@shop_required
+@require_POST
+def conversation_delete(request, pk):
+    """Mijoz ma'lumotlarini o'chirish (suhbat, xabarlar, mijoz yozuvi). Buyurtmalar saqlanadi."""
+    conv = get_object_or_404(Conversation.objects.select_related("customer"), pk=pk, customer__shop=request.shop)
+    conv.customer.delete()
+    messages.success(request, "Suhbat va mijoz ma'lumotlari o'chirildi. Buyurtma yozuvlari saqlab qolindi.")
+    return redirect("conversations")
 
 
 @shop_required

@@ -2,6 +2,9 @@ import secrets
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
+
+from .crypto import decrypt, encrypt, token_hash
 
 
 def _new_link_code() -> str:
@@ -18,7 +21,9 @@ class Shop(models.Model):
 
     owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="shop")
     name = models.CharField("Do'kon nomi", max_length=120)
-    bot_token = models.CharField("Telegram bot tokeni", max_length=100, blank=True)
+    # Bot tokeni faqat shifrlangan holda saqlanadi. Ishlatish: shop.bot_token (o'qish/yozish).
+    token_encrypted = models.TextField(blank=True, default="", editable=False)
+    token_hash = models.CharField(max_length=64, blank=True, default="", editable=False)
     bot_username = models.CharField(max_length=64, blank=True, editable=False)
     owner_telegram_id = models.BigIntegerField(null=True, blank=True, editable=False)
     owner_link_code = models.CharField(max_length=32, default=_new_link_code, editable=False)
@@ -40,18 +45,51 @@ class Shop(models.Model):
     class Meta:
         verbose_name = "Do'kon"
         verbose_name_plural = "Do'konlar"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["token_hash"], condition=~Q(token_hash=""), name="uniq_shop_token_hash"
+            )
+        ]
 
     def __str__(self) -> str:
         return self.name
 
     @property
+    def bot_token(self) -> str:
+        return decrypt(self.token_encrypted) if self.token_encrypted else ""
+
+    @bot_token.setter
+    def bot_token(self, value: str) -> None:
+        value = (value or "").strip()
+        self.token_encrypted = encrypt(value) if value else ""
+        self.token_hash = token_hash(value) if value else ""
+
+    @property
+    def has_token(self) -> bool:
+        return bool(self.token_encrypted)
+
+    @property
     def masked_token(self) -> str:
         """Tokenni interfeysda to'liq ko'rsatmaslik uchun."""
-        if not self.bot_token:
+        token = self.bot_token
+        if not token:
             return ""
-        return f"{self.bot_token[:5]}…{self.bot_token[-4:]}" if len(self.bot_token) > 12 else "••••"
+        return f"{token[:5]}…{token[-4:]}" if len(token) > 12 else "••••"
 
     def regenerate_link_code(self) -> None:
         self.owner_link_code = _new_link_code()
         self.owner_telegram_id = None
         self.save(update_fields=["owner_link_code", "owner_telegram_id"])
+
+    @classmethod
+    def link_owner(cls, shop_id: int, code: str, telegram_id: int) -> bool:
+        """Egasini Telegramga ulaydi. Kod bir martalik: ishlatilgach darhol almashtiriladi.
+
+        Bitta UPDATE bilan bajariladi, shuning uchun bir vaqtda ikki marta ishlatib bo'lmaydi.
+        """
+        if not code:
+            return False
+        updated = cls.objects.filter(pk=shop_id, owner_link_code=code).update(
+            owner_telegram_id=telegram_id, owner_link_code=_new_link_code()
+        )
+        return updated == 1

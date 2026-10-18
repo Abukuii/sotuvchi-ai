@@ -6,7 +6,9 @@ Xatolar qator bo'yicha yig'iladi: bitta noto'g'ri qator butun yuklashni to'xtatm
 import csv
 import io
 import re
+import zipfile
 from dataclasses import dataclass, field
+from itertools import islice
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
@@ -69,8 +71,12 @@ def _parse_price(value) -> Decimal:
             number = Decimal(cleaned)
         except InvalidOperation as exc:
             raise ValueError(f"narx noto'g'ri: {value!r}") from exc
+    if not number.is_finite():
+        raise ValueError("narx noto'g'ri")
     if number < 0:
         raise ValueError("narx manfiy bo'lishi mumkin emas")
+    if number > settings.MAX_PRICE:
+        raise ValueError("narx juda katta")
     return number.quantize(Decimal("1"))
 
 
@@ -83,27 +89,52 @@ def _parse_stock(value) -> int:
         raise ValueError(f"qoldiq noto'g'ri: {value!r}") from exc
     if number < 0:
         raise ValueError("qoldiq manfiy bo'lishi mumkin emas")
+    if number > settings.MAX_STOCK:
+        raise ValueError("qoldiq juda katta")
     return number
+
+
+def _check_zip_safety(data: bytes) -> None:
+    """.xlsx aslida zip: kichik fayl gigabaytlarga ochilib ketishini (zip-bomba) oldini oladi."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            infos = archive.infolist()
+            if len(infos) > 300:
+                raise ImportErrorBase("Excel fayl tuzilishi g'alati (juda ko'p ichki fayllar).")
+            if sum(i.file_size for i in infos) > settings.MAX_XLSX_UNCOMPRESSED_BYTES:
+                raise ImportErrorBase("Excel fayl ochilganda juda katta bo'lib ketadi. Faylni kichraytiring.")
+    except zipfile.BadZipFile as exc:
+        raise ImportErrorBase("Excel faylni o'qib bo'lmadi. .xlsx formatini tekshiring.") from exc
 
 
 def _read_rows(filename: str, data: bytes) -> list[list]:
     lower = filename.lower()
+    scan_limit = settings.MAX_CATALOG_ROWS * 2 + 1
     if lower.endswith(".xlsx"):
+        _check_zip_safety(data)
         try:
             wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+            ws = wb.active
+            rows = [list(r) for r in islice(ws.iter_rows(values_only=True), scan_limit)]
+            wb.close()
+        except ImportErrorBase:
+            raise
         except Exception as exc:  # openpyxl turli xatolar beradi
             raise ImportErrorBase("Excel faylni o'qib bo'lmadi. .xlsx formatini tekshiring.") from exc
-        ws = wb.active
-        rows = [list(r) for r in ws.iter_rows(values_only=True)]
-        wb.close()
         return rows
     if lower.endswith(".csv"):
         try:
             text = data.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise ImportErrorBase("CSV fayl UTF-8 kodlashda bo'lishi kerak.") from exc
-        dialect = csv.Sniffer().sniff(text[:2048], delimiters=",;\t") if text.strip() else csv.excel
-        return [row for row in csv.reader(io.StringIO(text), dialect)]
+        try:
+            dialect = csv.Sniffer().sniff(text[:2048], delimiters=",;\t")
+        except csv.Error:
+            dialect = csv.excel  # ajratgich aniqlanmadi: odatiy vergul
+        try:
+            return [row for row in islice(csv.reader(io.StringIO(text), dialect), scan_limit)]
+        except csv.Error as exc:
+            raise ImportErrorBase("CSV faylni o'qib bo'lmadi.") from exc
     raise ImportErrorBase("Faqat .xlsx yoki .csv fayl qabul qilinadi.")
 
 
@@ -123,7 +154,9 @@ def import_catalog(shop, filename: str, data: bytes) -> ImportResult:
         )
 
     body = rows[1:]
-    if len(body) > settings.MAX_CATALOG_ROWS:
+    if len(body) > settings.MAX_CATALOG_ROWS and any(
+        r and any(c is not None and str(c).strip() for c in r) for r in body[settings.MAX_CATALOG_ROWS :]
+    ):
         raise ImportErrorBase(f"Qatorlar soni {settings.MAX_CATALOG_ROWS} dan oshmasligi kerak.")
 
     def cell(row, key):
@@ -155,7 +188,7 @@ def import_catalog(shop, filename: str, data: bytes) -> ImportResult:
                 "name": name[:200],
                 "price": price,
                 "stock": stock,
-                "description": str(cell(row, "description") or "").strip(),
+                "description": str(cell(row, "description") or "").strip()[:2000],
                 "category": str(cell(row, "category") or "").strip()[:120],
                 "is_active": True,
             }
