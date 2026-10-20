@@ -56,3 +56,32 @@ input[type=text], input[type=password], input[type=number], input[type=file], se
 .auth { max-width: 420px; margin: 48px auto; }
 .pager { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
 code { background: var(--line); padding: 1px 6px; border-radius: 4px; word-break: break-all; }
+
+/* ---- Telefon ko'rinishi ---- */
+@media (max-width: 640px) {
+  main { padding: 16px 12px 48px; }
+  .topbar .inner { padding: 0 12px; }
+  .brand { padding: 12px 0; margin-right: 8px; }
+  .topbar form { margin-left: auto; }
+  .linkbtn { padding: 12px 6px; }
+  /* Menyu: bitta qatorda, gorizontal aylantiriladi */
+  .topbar nav { order: 3; flex: 1 0 100%; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .topbar nav::-webkit-scrollbar { display: none; }
+  .topbar nav a { padding: 10px 12px; white-space: nowrap; }
+  .grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { padding: 12px; }
+  .stat .num { font-size: 1.5rem; }
+  .stat .label { font-size: .75rem; }
+  .card { padding: 14px; }
+  .bubble { max-width: 90%; }
+  /* Jadvallar: har bir qator alohida kartochka */
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack tr.head { display: none; }
+  table.stack tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  table.stack td { border: 0; padding: 3px 0; display: flex; justify-content: space-between; gap: 12px; text-align: right; }
+  table.stack td::before { content: attr(data-label); color: var(--muted); font-size: .85rem; text-align: left; flex-shrink: 0; }
+  table.stack td:not([data-label])::before { content: none; }
+  table.stack td:not([data-label]) { justify-content: flex-end; }
+  table.stack th { display: flex; justify-content: space-between; border: 0; padding: 6px 0; }
+  input[type=text], input[type=password], input[type=number], select, textarea { font-size: 16px; } /* iOS da yaqinlashtirmasin */
+}

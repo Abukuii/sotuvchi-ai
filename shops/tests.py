@@ -376,3 +376,96 @@ class AdminAndHeadersTests(BaseTestCase):
         response = self.client.post(reverse("product_new"), {"name": "A", "price": "100", "stock": str(10**9)})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Product.objects.count(), 0)
+
+
+class CustomerNotificationTests(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.user, self.shop = make_user("a")
+        self.shop.bot_token = TOKEN
+        self.shop.save()
+        self.customer = Customer.objects.create(shop=self.shop, telegram_id=424242, language="uz")
+        self.order = Order.objects.create(
+            shop=self.shop, customer=self.customer, customer_name="Ali", phone="+998900000000", address="Y"
+        )
+        self.client.force_login(self.user)
+
+    def change(self, status, **extra):
+        data = {"status": status, "notify": "on"}
+        data.update(extra)
+        return self.client.post(reverse("order_status", args=[self.order.pk]), data, follow=True)
+
+    def test_status_change_notifies_customer(self):
+        from unittest import mock
+
+        import httpx
+
+        ok = httpx.Response(200, json={"ok": True}, request=httpx.Request("POST", "https://x/"))
+        with mock.patch("shops.notify.httpx.post", return_value=ok) as post:
+            response = self.change("delivered")
+        args, kwargs = post.call_args
+        self.assertIn(TOKEN, args[0])
+        self.assertEqual(kwargs["json"]["chat_id"], 424242)
+        self.assertIn(f"№{self.order.pk}", kwargs["json"]["text"])
+        self.assertIn("yetkazildi", kwargs["json"]["text"])
+        self.assertContains(response, "Mijozga Telegramda xabar yuborildi")
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "delivered")
+
+    def test_russian_customer_gets_russian_text(self):
+        from unittest import mock
+
+        import httpx
+
+        self.customer.language = "ru"
+        self.customer.save()
+        ok = httpx.Response(200, json={}, request=httpx.Request("POST", "https://x/"))
+        with mock.patch("shops.notify.httpx.post", return_value=ok) as post:
+            self.change("cancelled")
+        self.assertIn("отменён", post.call_args.kwargs["json"]["text"])
+
+    def test_checkbox_off_same_status_and_new_do_not_send(self):
+        from unittest import mock
+
+        with mock.patch("shops.notify.httpx.post") as post:
+            self.client.post(reverse("order_status", args=[self.order.pk]), {"status": "confirmed"})  # notify yo'q
+            self.change("confirmed")  # holat o'zgarmadi
+            self.change("new")  # "yangi" uchun matn yo'q
+        post.assert_not_called()
+
+    def test_telegram_failure_keeps_status_and_warns(self):
+        from unittest import mock
+
+        import httpx
+
+        forbidden = httpx.Response(403, json={}, request=httpx.Request("POST", "https://x/"))
+        attempts = [("confirmed", {"side_effect": httpx.ConnectError("x")}), ("delivered", {"return_value": forbidden})]
+        for status, behaviour in attempts:
+            with mock.patch("shops.notify.httpx.post", **behaviour):
+                response = self.change(status)
+            self.assertContains(response, "xabar yuborib bo&#x27;lmadi")
+            self.order.refresh_from_db()
+            self.assertEqual(self.order.status, status)  # holat baribir saqlanadi
+
+    def test_deleted_customer_or_no_token_sends_nothing(self):
+        from unittest import mock
+
+        with mock.patch("shops.notify.httpx.post") as post:
+            self.shop.bot_token = ""
+            self.shop.save()
+            self.change("confirmed")
+            self.order.customer.delete()
+            self.change("delivered")
+        post.assert_not_called()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "delivered")
+
+    def test_error_log_never_contains_token(self):
+        from unittest import mock
+
+        import httpx
+
+        with mock.patch("shops.notify.httpx.post", side_effect=httpx.ConnectError(f"https://api.telegram.org/bot{TOKEN}/sendMessage failed")):
+            with self.assertLogs("shops.notify", level="WARNING") as logs:
+                self.change("confirmed")
+        self.assertNotIn(TOKEN, "\n".join(logs.output))

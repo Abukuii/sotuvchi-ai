@@ -6,6 +6,7 @@ qo'shish "keyingi qadam" sifatida README da yozilgan.
 """
 import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from .models import Product
 from .text import keywords, tokenize
@@ -15,6 +16,18 @@ from .text import keywords, tokenize
 class Hit:
     product: Product
     score: float
+
+
+FUZZY_MIN_LEN = 5
+FUZZY_THRESHOLD = 0.8
+
+
+def _fuzzy_match(a: str, b: str) -> bool:
+    """Imlo xatolari uchun ("krosovka" ~ "krossovka"). Qisqa so'zlar va juda farqli uzunliklar o'tkazib yuboriladi."""
+    if len(a) < FUZZY_MIN_LEN or len(b) < FUZZY_MIN_LEN or abs(len(a) - len(b)) > 2:
+        return False
+    matcher = SequenceMatcher(None, a, b)
+    return matcher.real_quick_ratio() >= FUZZY_THRESHOLD and matcher.ratio() >= FUZZY_THRESHOLD
 
 
 def _token_score(query_token: str, product_token: str) -> float:
@@ -31,6 +44,8 @@ def _token_score(query_token: str, product_token: str) -> float:
     # Qo'shimchalar (-lar, -ni, -ning, -ы, -ов) farqini kechiradi
     if common >= 4 and common >= shortest - 2:
         return 2.0
+    if _fuzzy_match(query_token, product_token):
+        return 1.5
     return 0.0
 
 

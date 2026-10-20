@@ -18,15 +18,15 @@
     <form method="get" class="row"><input type="text" name="q" value="{{ q }}" placeholder="Qidirish..." style="width:240px"><button class="secondary" type="submit">Qidirish</button></form>
     <a class="btn" href="{% url 'product_new' %}">+ Mahsulot qo'shish</a>
   </div>
-  <div class="table-wrap"><table>
-    <tr><th>Nomi</th><th>Toifa</th><th>Narxi</th><th>Qoldiq</th><th>Holat</th><th></th></tr>
+  <div class="table-wrap"><table class="stack">
+    <tr class="head"><th>Nomi</th><th>Toifa</th><th>Narxi</th><th>Qoldiq</th><th>Holat</th><th></th></tr>
     {% for p in page %}
     <tr>
-      <td>{{ p.name }}{% if p.sku %} <span class="muted">({{ p.sku }})</span>{% endif %}</td>
-      <td>{{ p.category }}</td>
-      <td>{{ p.price|intcomma }}</td>
-      <td>{{ p.stock }}</td>
-      <td>{% if p.is_active %}<span class="badge delivered">faol</span>{% else %}<span class="badge">o'chiq</span>{% endif %}</td>
+      <td data-label="Nomi"><span>{{ p.name }}{% if p.sku %} <span class="muted">({{ p.sku }})</span>{% endif %}</span></td>
+      <td data-label="Toifa">{{ p.category }}</td>
+      <td data-label="Narxi">{{ p.price|intcomma }}</td>
+      <td data-label="Qoldiq">{{ p.stock }}</td>
+      <td data-label="Holat">{% if p.is_active %}<span class="badge delivered">faol</span>{% else %}<span class="badge">o'chiq</span>{% endif %}</td>
       <td><a href="{% url 'product_edit' p.pk %}">Tahrirlash</a></td>
     </tr>
     {% empty %}

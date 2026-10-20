@@ -170,3 +170,38 @@ class ImporterHardeningTests(TestCase):
         data = make_xlsx([["Nomi", "Narxi", "Tavsif"], ["A", 1, "x" * 10000]])
         import_catalog(self.shop, "k.xlsx", data)
         self.assertEqual(len(Product.objects.get().description), 2000)
+
+
+class FuzzySearchTests(TestCase):
+    def setUp(self):
+        self.shop = make_shop()
+        import_catalog(self.shop, "k.xlsx", build_template_xlsx())
+        Product.objects.create(shop=self.shop, name="Paypoq to'plami", price=45000, stock=3)
+        Product.objects.create(shop=self.shop, name="Qalpoq", price=30000, stock=3)
+
+    def top(self, query):
+        hits = search_products(self.shop, query)
+        return hits[0].product.name if hits else None
+
+    def test_typos_still_find_product(self):
+        self.assertEqual(self.top("krosovka bormi"), "Krossovka Run Pro")
+        self.assertEqual(self.top("kroosovka"), "Krossovka Run Pro")
+        self.assertEqual(self.top("paypok narxi"), "Paypoq to'plami")
+
+    def test_exact_match_beats_fuzzy(self):
+        self.assertEqual(self.top("qalpoq"), "Qalpoq")
+
+    def test_unrelated_and_short_words_do_not_match(self):
+        self.assertIsNone(self.top("dron"))
+        self.assertIsNone(self.top("shim"))  # qisqa so'z: fuzzy yo'q
+        self.assertIsNone(self.top("qalam"))  # "qalpoq" ga o'xshamaydi
+
+    def test_performance_on_large_catalog(self):
+        import time
+
+        Product.objects.bulk_create(
+            [Product(shop=self.shop, name=f"Mahsulot {i} turi {i % 17} model", category="Toifa", price=1000 + i, stock=1) for i in range(2000)]
+        )
+        started = time.perf_counter()
+        search_products(self.shop, "krosovka mahsulot turi model")
+        self.assertLess(time.perf_counter() - started, 2.0)

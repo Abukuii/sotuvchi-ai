@@ -41,15 +41,15 @@
 <div class="card">
   <h2>So'nggi buyurtmalar</h2>
   {% if recent_orders %}
-  <div class="table-wrap"><table>
-    <tr><th>№</th><th>Mijoz</th><th>Jami</th><th>Holat</th><th>Sana</th></tr>
+  <div class="table-wrap"><table class="stack">
+    <tr class="head"><th>№</th><th>Mijoz</th><th>Jami</th><th>Holat</th><th>Sana</th></tr>
     {% for o in recent_orders %}
     <tr>
-      <td><a href="{% url 'order_detail' o.pk %}">#{{ o.pk }}</a></td>
-      <td>{{ o.customer_name }}</td>
-      <td>{{ o.total|intcomma }} so'm</td>
-      <td><span class="badge {{ o.status }}">{{ o.get_status_display }}</span></td>
-      <td>{{ o.created_at|date:"d.m.Y H:i" }}</td>
+      <td data-label="№"><a href="{% url 'order_detail' o.pk %}">#{{ o.pk }}</a></td>
+      <td data-label="Mijoz">{{ o.customer_name }}</td>
+      <td data-label="Jami">{{ o.total|intcomma }} so'm</td>
+      <td data-label="Holat"><span class="badge {{ o.status }}">{{ o.get_status_display }}</span></td>
+      <td data-label="Sana">{{ o.created_at|date:"d.m.Y H:i" }}</td>
     </tr>
     {% endfor %}
   </table></div>

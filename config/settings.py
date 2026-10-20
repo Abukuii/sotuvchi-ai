@@ -4,7 +4,7 @@ Barcha maxfiy qiymatlar .env faylidan (yoki muhit o'zgaruvchilaridan) o'qiladi.
 """
 import os
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from dotenv import load_dotenv
 
@@ -91,7 +91,8 @@ def _database_from_url(url: str) -> dict:
         "NAME": parsed.path.lstrip("/"),
         "USER": unquote(parsed.username or ""),
         "PASSWORD": unquote(parsed.password or ""),
-        "HOST": parsed.hostname or "localhost",
+        # ?host=/var/run/postgresql kabi unix-socket manzilini ham qo'llab-quvvatlaydi
+        "HOST": parse_qs(parsed.query).get("host", [parsed.hostname or "localhost"])[0],
         "PORT": str(parsed.port or 5432),
     }
 

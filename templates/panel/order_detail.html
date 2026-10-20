@@ -8,10 +8,10 @@
      <strong>Telefon:</strong> {{ order.phone }}<br>
      <strong>Manzil:</strong> {{ order.address }}<br>
      <strong>Sana:</strong> {{ order.created_at|date:"d.m.Y H:i" }}</p>
-  <div class="table-wrap"><table>
-    <tr><th>Mahsulot</th><th>Narxi</th><th>Soni</th><th>Summa</th></tr>
+  <div class="table-wrap"><table class="stack">
+    <tr class="head"><th>Mahsulot</th><th>Narxi</th><th>Soni</th><th>Summa</th></tr>
     {% for i in order.items.all %}
-    <tr><td>{{ i.name }}</td><td>{{ i.unit_price|intcomma }}</td><td>{{ i.quantity }}</td><td>{{ i.subtotal|intcomma }}</td></tr>
+    <tr><td data-label="Mahsulot">{{ i.name }}</td><td data-label="Narxi">{{ i.unit_price|intcomma }}</td><td data-label="Soni">{{ i.quantity }}</td><td data-label="Summa">{{ i.subtotal|intcomma }}</td></tr>
     {% endfor %}
     <tr><th colspan="3">Jami</th><th>{{ order.total|intcomma }} so'm</th></tr>
   </table></div>
@@ -22,6 +22,7 @@
     <select name="status" style="width:220px">
       {% for value, label in statuses %}<option value="{{ value }}" {% if value == order.status %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
+    <label><input type="checkbox" name="notify" checked> Mijozga Telegramda xabar yuborish</label>
     <button type="submit">Saqlash</button>
     <a class="btn secondary" href="{% url 'orders' %}">Orqaga</a>
   </form>

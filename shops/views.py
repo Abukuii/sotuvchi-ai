@@ -15,7 +15,7 @@ from catalog.models import Product
 from conversations.models import Conversation
 from orders.models import Order
 
-from . import throttle
+from . import notify, throttle
 from .forms import CatalogUploadForm, ProductForm, ShopForm, SignupForm
 from .models import Shop
 
@@ -188,14 +188,21 @@ def order_detail(request, pk):
 @shop_required
 @require_POST
 def order_status(request, pk):
-    order = get_object_or_404(Order, pk=pk, shop=request.shop)
+    order = get_object_or_404(Order.objects.select_related("customer", "shop"), pk=pk, shop=request.shop)
     new_status = request.POST.get("status", "")
     if new_status not in dict(Order.STATUS_CHOICES):
         messages.error(request, "Noto'g'ri holat.")
-    else:
-        order.status = new_status
-        order.save(update_fields=["status"])
-        messages.success(request, "Buyurtma holati yangilandi.")
+        return redirect("order_detail", pk=order.pk)
+    changed = new_status != order.status
+    order.status = new_status
+    order.save(update_fields=["status"])
+    messages.success(request, "Buyurtma holati yangilandi.")
+    if changed and request.POST.get("notify") == "on":
+        sent = notify.notify_customer_status(order, new_status)
+        if sent is True:
+            messages.success(request, "Mijozga Telegramda xabar yuborildi.")
+        elif sent is False:
+            messages.warning(request, "Holat saqlandi, lekin mijozga xabar yuborib bo'lmadi (bot tokenini va internetni tekshiring).")
     return redirect("order_detail", pk=order.pk)
 
 
