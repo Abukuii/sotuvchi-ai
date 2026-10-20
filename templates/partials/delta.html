@@ -1,0 +1,1 @@
+{% if d is None %}<span class="delta flat" title="Oldingi davrda ma'lumot yo'q">—</span>{% elif d > 0 %}<span class="delta up">▲ {{ d }}%</span>{% elif d < 0 %}<span class="delta down">▼ {{ d|cut:"-" }}%</span>{% else %}<span class="delta flat">0%</span>{% endif %}

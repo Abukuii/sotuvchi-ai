@@ -1,58 +1,169 @@
 {% extends "base.html" %}
-{% load humanize %}
+{% load humanize l10n %}
 {% block title %}Boshqaruv — Sotuvchi AI{% endblock %}
 {% block content %}
-<h1>{{ shop.name }}</h1>
-
-<div class="grid">
-  <div class="card stat"><div class="num">{{ products_count }}</div><div class="label">Faol mahsulotlar</div></div>
-  <div class="card stat"><div class="num">{{ new_orders }}</div><div class="label">Yangi buyurtmalar</div></div>
-  <div class="card stat"><div class="num">{{ attention }}</div><div class="label">Egasi e'tibori kerak</div></div>
+{% localize off %}
+<div class="pageheader">
+  <div>
+    <h1>{{ shop.name }}</h1>
+    <div class="muted small">{{ a.period_label }}</div>
+  </div>
+  <div class="tabs" role="group" aria-label="Davrni tanlang">
+    {% for d in a.allowed_days %}<a href="?days={{ d }}"{% if d == a.days %} class="active" aria-current="true"{% endif %}>{{ d }} kun</a>{% endfor %}
+  </div>
 </div>
 
-<div class="card">
+{% if not setup_done %}
+<div class="card green">
   <h2>Ishga tushirish</h2>
-  <ol>
-    <li>
-      {% if shop.has_token %}✅{% else %}⬜{% endif %}
+  <ol class="steps">
+    <li{% if shop.has_token %} class="done"{% endif %}>
       Telegram bot tokenini ulang — <a href="{% url 'shop_settings' %}">Sozlamalar</a>
-      {% if shop.has_token %}<span class="muted">({{ shop.masked_token }}{% if shop.bot_username %}, @{{ shop.bot_username }}{% endif %})</span>{% endif %}
+      {% if shop.has_token %}<span class="muted small">({{ shop.masked_token }}{% if shop.bot_username %}, @{{ shop.bot_username }}{% endif %})</span>{% endif %}
     </li>
-    <li>
-      {% if products_count %}✅{% else %}⬜{% endif %}
-      Katalogni yuklang — <a href="{% url 'catalog' %}">Katalog</a>
-    </li>
-    <li>
-      {% if shop.owner_telegram_id %}✅{% else %}⬜{% endif %}
+    <li{% if products_count %} class="done"{% endif %}>Katalogni yuklang — <a href="{% url 'catalog' %}">Katalog</a></li>
+    <li{% if shop.owner_telegram_id %} class="done"{% endif %}>
       Buyurtma xabarlari uchun Telegramingizni ulang
-      {% if owner_link and not shop.owner_telegram_id %}— <a href="{{ owner_link }}" target="_blank" rel="noopener">shu havolani oching</a> va «Start» ni bosing{% elif not shop.bot_username %}<span class="muted">(bot ishga tushgach havola paydo bo'ladi)</span>{% endif %}
+      {% if owner_link and not shop.owner_telegram_id %}— <a href="{{ owner_link }}" target="_blank" rel="noopener noreferrer">shu havolani oching</a> va «Start» ni bosing{% elif not shop.bot_username %}<span class="muted small">(bot ishga tushgach havola paydo bo'ladi)</span>{% endif %}
     </li>
-    <li>⬜ Terminalda <code>python manage.py runbots</code> ni ishga tushiring.</li>
+    <li>Terminalda <code>python manage.py runbots</code> ni ishga tushiring.</li>
   </ol>
-  {% if bot_link %}<p>Mijozlar uchun bot: <a href="{{ bot_link }}" target="_blank" rel="noopener">{{ bot_link }}</a></p>{% endif %}
-  {% if shop.owner_telegram_id %}
-  <form method="post" action="{% url 'regenerate_link' %}" class="row">{% csrf_token %}
-    <button class="secondary" type="submit">Telegram ulanishini qayta o'rnatish</button>
-  </form>
-  {% endif %}
-  <p class="muted">AI provayder: <code>{{ llm_provider }}</code>{% if llm_provider == "mock" %} (demo rejim: haqiqiy AI emas, .env da LLM_PROVIDER ni o'zgartiring){% endif %}</p>
+  <p class="muted small mb0">AI provayder: <code>{{ llm_provider }}</code>{% if llm_provider == "mock" %} (demo rejim: haqiqiy AI emas, <code>.env</code> da <code>LLM_PROVIDER</code> ni o'zgartiring){% endif %}</p>
+</div>
+{% endif %}
+
+<div class="grid kpis">
+  <div class="card stat">
+    <div class="label">Daromad</div>
+    <div class="num">{{ a.totals.revenue|intcomma }} <small>so'm</small></div>
+    <div class="sub">{% include "partials/delta.html" with d=a.deltas.revenue %} oldingi {{ a.days }} kunga nisbatan</div>
+  </div>
+  <div class="card stat">
+    <div class="label">Buyurtmalar</div>
+    <div class="num">{{ a.totals.orders }}</div>
+    <div class="sub">{% include "partials/delta.html" with d=a.deltas.orders %} · bekor qilingan: {{ a.cancelled }}</div>
+  </div>
+  <div class="card stat">
+    <div class="label">O'rtacha chek</div>
+    <div class="num">{{ a.totals.avg_order|floatformat:0|intcomma }} <small>so'm</small></div>
+    <div class="sub">bitta buyurtma o'rtacha summasi</div>
+  </div>
+  <div class="card stat">
+    <div class="label">Yozgan mijozlar</div>
+    <div class="num">{{ a.totals.active_customers }}</div>
+    <div class="sub">{% include "partials/delta.html" with d=a.deltas.active_customers %} · yangi: {{ a.totals.new_customers }}</div>
+  </div>
+  <div class="card stat">
+    <div class="label">Konversiya</div>
+    <div class="num">{% if a.conversion_pct is None %}—{% else %}{{ a.conversion_pct }}%{% endif %}</div>
+    <div class="sub">{{ a.totals.buyers }} ta xaridor / {{ a.totals.active_customers }} ta mijoz</div>
+  </div>
+  <div class="card stat">
+    <div class="label">Kechki xabarlar (21:00–09:00)</div>
+    <div class="num">{% if a.hours.night_pct is None %}—{% else %}{{ a.hours.night_pct }}%{% endif %}</div>
+    <div class="sub">{{ a.hours.night }} / {{ a.hours.total }} xabar: bot sizsiz javob berdi</div>
+  </div>
+  <div class="card stat">
+    <div class="label">E'tibor kerak</div>
+    <div class="num">{{ a.attention }}</div>
+    <div class="sub"><a href="{% url 'conversations' %}?attention=1">Suhbatlarni ko'rish</a></div>
+  </div>
+  <div class="card stat">
+    <div class="label">Ombor</div>
+    <div class="num">{{ a.stock.out_count }} <small>tugagan</small></div>
+    <div class="sub">{{ a.stock.low_count }} ta kam qolgan · <a href="{% url 'catalog' %}">Katalog</a></div>
+  </div>
 </div>
 
 <div class="card">
-  <h2>So'nggi buyurtmalar</h2>
+  <div class="rowline"><h2>Kunlik daromad</h2><span class="muted small">eng yuqori: {{ a.chart.peak }} so'm</span></div>
+  {% if a.chart.empty %}
+    <div class="empty">Bu davrda buyurtma yo'q. Bot birinchi buyurtmani olgach, grafik shu yerda paydo bo'ladi.</div>
+  {% else %}
+  <svg class="chart" viewBox="0 0 {{ a.chart.w }} {{ a.chart.h }}" role="img" aria-label="Kunlik daromad grafigi">
+    <line class="grid" x1="0" x2="{{ a.chart.w }}" y1="40" y2="40"/><line class="grid" x1="0" x2="{{ a.chart.w }}" y1="80" y2="80"/><line class="grid" x1="0" x2="{{ a.chart.w }}" y1="120" y2="120"/>
+    {% for b in a.chart.bars %}<rect class="bar{% if b.zero %} zero{% endif %}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}"><title>{{ b.label }}: {{ b.revenue|intcomma }} so'm, {{ b.orders }} ta buyurtma</title></rect>{% endfor %}
+  </svg>
+  <div class="axis"><span>{{ a.chart.first }}</span><span>{{ a.chart.middle }}</span><span>{{ a.chart.last }}</span></div>
+  {% endif %}
+</div>
+
+<div class="grid two-col">
+  <div class="card">
+    <h2>Mijozlar qaysi soatda yozadi</h2>
+    {% if a.hours.empty %}
+      <div class="empty">Bu davrda mijoz xabari yo'q.</div>
+    {% else %}
+    <svg class="chart" viewBox="0 0 {{ a.hours.w }} {{ a.hours.h }}" role="img" aria-label="Soatlar bo'yicha xabarlar">
+      <line class="grid" x1="0" x2="{{ a.hours.w }}" y1="80" y2="80"/>
+      {% for b in a.hours.bars %}<rect class="bar{% if b.night %} night{% endif %}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}"><title>{{ b.hour }}: {{ b.count }} ta xabar</title></rect>{% endfor %}
+    </svg>
+    <div class="axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+    <div class="legend"><span><i></i>Kunduzi (09–21)</span><span><i class="night"></i>Kechqurun va tunda (21–09)</span></div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Buyurtma holatlari</h2>
+    {% if a.has_orders_in_period %}
+    <svg class="stackbar" viewBox="0 0 100 10" preserveAspectRatio="none" role="img" aria-label="Buyurtma holatlari ulushi">
+      {% for st in a.statuses %}{% if st.count %}<rect class="{{ st.status }}" x="{{ st.x }}" y="0" width="{{ st.w }}" height="10"/>{% endif %}{% endfor %}
+    </svg>
+    {% endif %}
+    <ul class="list-clean mt">
+      {% for st in a.statuses %}
+      <li class="rowline"><span><span class="badge {{ st.status }}">{{ st.label }}</span></span><span><strong>{{ st.count }}</strong> <span class="muted small">({{ st.pct }}%)</span></span></li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+<div class="grid two-col mt">
+  <div class="card">
+    <h2>Eng ko'p sotilgan mahsulotlar</h2>
+    {% if a.top_products %}
+    <ul class="list-clean">
+      {% for p in a.top_products %}
+      <li>
+        <div class="rowline"><span>{{ p.name }}</span><span class="nowrap"><strong>{{ p.revenue|intcomma }}</strong> so'm · {{ p.qty }} dona</span></div>
+        {% include "partials/hbar.html" with pct=p.share %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<div class="empty">Bu davrda sotuv yo'q.</div>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Omborni to'ldiring</h2>
+    {% if a.stock.items %}
+    <ul class="list-clean">
+      {% for p in a.stock.items %}
+      <li class="rowline">
+        <a href="{% url 'product_edit' p.pk %}">{{ p.name }}</a>
+        {% if p.stock == 0 %}<span class="badge cancelled">tugagan</span>{% else %}<span class="badge new">{{ p.stock }} dona</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<div class="empty">Hammasi joyida: kam qolgan mahsulot yo'q (≤ {{ a.stock.threshold }} dona).</div>{% endif %}
+  </div>
+</div>
+
+<div class="card mt">
+  <div class="rowline"><h2>So'nggi buyurtmalar</h2><a href="{% url 'orders' %}">Hammasi</a></div>
   {% if recent_orders %}
   <div class="table-wrap"><table class="stack">
-    <tr class="head"><th>№</th><th>Mijoz</th><th>Jami</th><th>Holat</th><th>Sana</th></tr>
+    <tr class="head"><th>№</th><th>Mijoz</th><th class="num">Jami</th><th>Holat</th><th>Sana</th></tr>
     {% for o in recent_orders %}
     <tr>
       <td data-label="№"><a href="{% url 'order_detail' o.pk %}">#{{ o.pk }}</a></td>
       <td data-label="Mijoz">{{ o.customer_name }}</td>
-      <td data-label="Jami">{{ o.total|intcomma }} so'm</td>
+      <td data-label="Jami" class="num">{{ o.total|intcomma }} so'm</td>
       <td data-label="Holat"><span class="badge {{ o.status }}">{{ o.get_status_display }}</span></td>
       <td data-label="Sana">{{ o.created_at|date:"d.m.Y H:i" }}</td>
     </tr>
     {% endfor %}
   </table></div>
-  {% else %}<p class="muted">Hali buyurtma yo'q.</p>{% endif %}
+  {% else %}<div class="empty">Hali buyurtma yo'q.</div>{% endif %}
 </div>
+{% endlocalize %}
 {% endblock %}

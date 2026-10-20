@@ -4,8 +4,8 @@
 {% block content %}
 <h1>Buyurtmalar</h1>
 <div class="card">
-  <form method="get" class="row" style="margin-bottom:12px">
-    <select name="status" style="width:200px" onchange="this.form.submit()">
+  <form method="get" class="row mb">
+    <select name="status" class="w-sm" data-autosubmit>
       <option value="">Hammasi</option>
       {% for value, label in statuses %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>

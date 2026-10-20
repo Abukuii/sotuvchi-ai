@@ -8,14 +8,14 @@
   <h2>Excel yoki CSV yuklash</h2>
   <p class="muted">Ustunlar: Nomi, Narxi (majburiy), Qoldiq, Toifa, Tavsif, Kod. Mavjud mahsulotlar (kod yoki nom bo'yicha) yangilanadi. <a href="{% url 'catalog_template' %}">Shablonni yuklab olish</a></p>
   <form method="post" action="{% url 'catalog_upload' %}" enctype="multipart/form-data" class="row">{% csrf_token %}
-    <input type="file" name="file" accept=".xlsx,.csv" required style="max-width:340px">
+    <input type="file" name="file" accept=".xlsx,.csv" required class="w-file">
     <button type="submit">Yuklash</button>
   </form>
 </div>
 
 <div class="card">
-  <div class="row" style="justify-content:space-between">
-    <form method="get" class="row"><input type="text" name="q" value="{{ q }}" placeholder="Qidirish..." style="width:240px"><button class="secondary" type="submit">Qidirish</button></form>
+  <div class="row between">
+    <form method="get" class="row"><input type="text" name="q" value="{{ q }}" placeholder="Qidirish..." class="w-md"><button class="secondary" type="submit">Qidirish</button></form>
     <a class="btn" href="{% url 'product_new' %}">+ Mahsulot qo'shish</a>
   </div>
   <div class="table-wrap"><table class="stack">

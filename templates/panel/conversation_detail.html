@@ -4,7 +4,7 @@
 <h1>{{ conv.customer }}{% if conv.customer.username %} <span class="muted">@{{ conv.customer.username }}</span>{% endif %}</h1>
 <div class="card">
   {% if conv.needs_attention %}
-  <form method="post" class="row" style="margin-bottom:12px">{% csrf_token %}
+  <form method="post" class="row mb">{% csrf_token %}
     <span class="badge attn">e'tibor kerak</span>
     <input type="hidden" name="resolve" value="1">
     <button class="secondary" type="submit">Hal qilindi deb belgilash</button>
@@ -18,7 +18,7 @@
 </div>
 <div class="row">
   <a class="btn secondary" href="{% url 'conversations' %}">Orqaga</a>
-  <form method="post" action="{% url 'conversation_delete' conv.pk %}" onsubmit="return confirm('Suhbat va mijoz ma\'lumotlarini butunlay o\'chirasizmi? Buyurtma yozuvlari saqlanadi.')">{% csrf_token %}
+  <form method="post" action="{% url 'conversation_delete' conv.pk %}" data-confirm="Suhbat va mijoz ma'lumotlarini butunlay o'chirasizmi? Buyurtma yozuvlari saqlanadi.">{% csrf_token %}
     <button class="danger" type="submit">Mijoz ma'lumotlarini o'chirish</button>
   </form>
 </div>

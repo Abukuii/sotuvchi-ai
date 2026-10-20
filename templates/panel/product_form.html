@@ -8,7 +8,7 @@
     <div class="row"><button type="submit">Saqlash</button><a class="btn secondary" href="{% url 'catalog' %}">Bekor qilish</a></div>
   </form>
   {% if product %}
-  <form method="post" action="{% url 'product_delete' product.pk %}" onsubmit="return confirm('Mahsulotni o\'chirasizmi?')" style="margin-top:16px">{% csrf_token %}
+  <form method="post" action="{% url 'product_delete' product.pk %}" data-confirm="Mahsulotni o'chirasizmi?" class="mt">{% csrf_token %}
     <button class="danger" type="submit">O'chirish</button>
   </form>
   {% endif %}

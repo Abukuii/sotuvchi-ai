@@ -19,7 +19,7 @@
 <div class="card">
   <h2>Holatni o'zgartirish</h2>
   <form method="post" action="{% url 'order_status' order.pk %}" class="row">{% csrf_token %}
-    <select name="status" style="width:220px">
+    <select name="status" class="w-sm">
       {% for value, label in statuses %}<option value="{{ value }}" {% if value == order.status %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
     <label><input type="checkbox" name="notify" checked> Mijozga Telegramda xabar yuborish</label>

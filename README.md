@@ -70,6 +70,10 @@ Kalitlar kodda saqlanmaydi, `.env` esa `.gitignore` da.
 
 Panelda **Katalog → Shablonni yuklab olish**. Ustunlar (o'zbek, rus yoki ingliz nomlari qabul qilinadi): `Nomi`, `Narxi` (majburiy), `Qoldiq`, `Toifa`, `Tavsif`, `Kod`. Qayta yuklanganda mavjud mahsulotlar kod yoki nom bo'yicha yangilanadi. Xato qatorlar o'tkazib yuboriladi va sabablari ko'rsatiladi.
 
+## Boshqaruv paneli analitikasi
+
+Daromad, buyurtmalar, o'rtacha chek, konversiya, kunlik daromad va soatlar grafigi (SVG, tashqi kutubxonasiz), kechki (21:00–09:00) xabarlar ulushi, buyurtma holatlari, top mahsulotlar, ombor ogohlantirishlari. Davr: 7/30/90 kun, oldingi shuncha kun bilan solishtiriladi; bekor qilingan buyurtmalar daromadga kirmaydi. Interfeys faqat oq, qora va yashil ranglardan iborat (qorong'i rejim ham).
+
 ## Xavfsizlik choralari
 
 - **Bot tokenlari bazada shifrlangan** (Fernet), interfeysda maskalanadi va hech qachon qaytarilmaydi; takroriy tokenni baza rad etadi.
@@ -78,6 +82,7 @@ Panelda **Katalog → Shablonni yuklab olish**. Ustunlar (o'zbek, rus yoki ingli
 - **LLM ga ishonilmaydi:** narx/qoldiq/jami bazadan, `product_id` tekshiriladi, buyurtma faqat tasdiqdan keyin, ikki marta "Ha" bitta buyurtma beradi (suhbat qatori qulflanadi), javobdagi begona havolalar olib tashlanadi.
 - **Fayl yuklash:** hajm, ochilgan hajm (zip-bomba), qatorlar soni, narx/qoldiq chegaralari tekshiriladi.
 - **Bot faqat shaxsiy chatlarda** javob beradi; spamga qarshi daqiqada 12 xabar chegarasi.
+- **Content-Security-Policy** (`'self'` faqat, inline skript/uslubsiz), `Permissions-Policy`, shaxsiy sahifalar `no-store`; parolni panelda almashtirish (`/password/`).
 - Django: CSRF, `HttpOnly`/`SameSite` cookie, `X-Frame-Options: DENY`, `nosniff`; `DEBUG=0` da secure cookie; HTTPS sozlamalari `.env` orqali yoqiladi.
 - Mijoz ma'lumotini panelda o'chirish mumkin (buyurtma yozuvlari saqlanadi).
 
@@ -108,7 +113,7 @@ Asosiy qarorlar:
 python manage.py test
 ```
 
-99 ta test: Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
+166 ta test (SQLite va PostgreSQL da o'tgan): analitika (davr chegaralari, bekorlar, oldingi davr bilan solishtirish, kechki xabarlar ulushi), CSP/sarlavhalar, rang palitrasi (faqat oq/qora/yashil),  Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
 
 ## Cheklovlar (halol ro'yxat)
 

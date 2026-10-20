@@ -2,7 +2,8 @@ from functools import wraps
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth import login, update_session_auth_hash
+from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Q
@@ -15,7 +16,7 @@ from catalog.models import Product
 from conversations.models import Conversation
 from orders.models import Order
 
-from . import notify, throttle
+from . import analytics, notify, throttle
 from .forms import CatalogUploadForm, ProductForm, ShopForm, SignupForm
 from .models import Shop
 
@@ -54,16 +55,28 @@ def signup(request):
 
 
 @shop_required
+def password_change(request):
+    form = PasswordChangeForm(request.user, request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        update_session_auth_hash(request, user)  # joriy sessiya saqlanadi, boshqalari bekor bo'ladi
+        messages.success(request, "Parol yangilandi.")
+        return redirect("shop_settings")
+    return render(request, "registration/password_change.html", {"form": form})
+
+
+@shop_required
 def dashboard(request):
     shop = request.shop
+    products_count = Product.objects.filter(shop=shop, is_active=True).count()
+    data = analytics.build_dashboard(shop, analytics.parse_days(request.GET.get("days")))
     context = {
         "shop": shop,
-        "products_count": Product.objects.filter(shop=shop, is_active=True).count(),
-        "new_orders": Order.objects.filter(shop=shop, status=Order.STATUS_NEW).count(),
-        "attention": Conversation.objects.filter(customer__shop=shop, needs_attention=True).count(),
+        "a": data,
+        "products_count": products_count,
+        "setup_done": bool(shop.has_token and products_count and shop.owner_telegram_id),
         "recent_orders": Order.objects.filter(shop=shop).prefetch_related("items")[:5],
         "llm_provider": settings.LLM_PROVIDER,
-        "bot_link": f"https://t.me/{shop.bot_username}" if shop.bot_username else "",
         "owner_link": f"https://t.me/{shop.bot_username}?start={shop.owner_link_code}" if shop.bot_username else "",
     }
     return render(request, "panel/dashboard.html", context)
