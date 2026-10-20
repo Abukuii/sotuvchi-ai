@@ -25,6 +25,7 @@ from orders.models import Order, OrderItem
 
 from .models import Conversation, Customer, Message
 from .prompts import build_system_prompt
+from .slots import extract_slots
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,9 @@ MAX_QTY = 999
 STR = {
     "uz": {
         "already": "Buyurtmangiz allaqachon qabul qilingan. Yangi buyurtma uchun yozing.",
+        "need_name": "Buyurtma uchun ismingizni yozing.",
+        "need_phone": "Rahmat, {name}! Endi telefon raqamingizni yozing (masalan, +998901234567).",
+        "need_address": "Yetkazib berish manzilini yozing.",
         "rate_limit": "Juda tez yozyapsiz. Bir daqiqadan keyin qayta urinib ko'ring.",
         "empty": "Savolingizni matn ko'rinishida yozing.",
         "llm_down": "Hozir javob bera olmayapman. Xabaringizni do'kon egasiga uzatdim, tez orada bog'lanishadi.",
@@ -59,6 +63,9 @@ STR = {
     },
     "ru": {
         "already": "Ваш заказ уже принят. Для нового заказа напишите.",
+        "need_name": "Для заказа напишите ваше имя.",
+        "need_phone": "Спасибо, {name}! Теперь напишите номер телефона (например, +998901234567).",
+        "need_address": "Напишите адрес доставки.",
         "rate_limit": "Вы пишете слишком быстро. Попробуйте через минуту.",
         "empty": "Напишите ваш вопрос текстом.",
         "llm_down": "Сейчас не могу ответить. Я передал ваше сообщение владельцу магазина, он скоро свяжется с вами.",
@@ -386,6 +393,7 @@ def handle_message(shop, telegram_id: int, username: str, full_name: str, text: 
                 for h in hits
             ],
             "draft": prev_draft,
+            "product_mentioned": bool(search_products(shop, text, limit=1)),
         },
     )
 
@@ -424,6 +432,26 @@ def handle_message(shop, telegram_id: int, username: str, full_name: str, text: 
             phone = normalized
         else:
             bad_phone = True
+
+    # Zaxira: LLM maydonni to'ldirmagan bo'lsa (masalan, yalang'och "Otabek" javobi), aniq qoidalar bilan to'ldiramiz
+    filled_by_rules = False
+    if items:
+        product_mentioned = bool(search_products(shop, text, limit=1))
+        extra = extract_slots(
+            text,
+            {"customer_name": name, "phone": phone, "address": address},
+            allow_name=not product_mentioned,
+        )
+        if not name and extra.get("customer_name"):
+            name, filled_by_rules = clean_text(extra["customer_name"], 120), True
+        if not phone and extra.get("phone"):
+            normalized = normalize_phone(extra["phone"])
+            if normalized:
+                phone, filled_by_rules = normalized, True
+            else:
+                bad_phone = True
+        if not address and extra.get("address"):
+            address, filled_by_rules = clean_text(extra["address"], 300), True
 
     new_draft = {"items": items, "customer_name": name, "phone": phone, "address": address}
     state_changed = new_draft != {
@@ -470,6 +498,14 @@ def handle_message(shop, telegram_id: int, username: str, full_name: str, text: 
     else:
         if bad_phone:
             reply_text = t["bad_phone"]
+        elif filled_by_rules and items:
+            # LLM javobi eskirgan bo'lishi mumkin (masalan, ismni yana so'raydi): keyingi bo'sh maydonni biz so'raymiz
+            if not name:
+                reply_text = t["need_name"]
+            elif not phone:
+                reply_text = t["need_phone"].format(name=name.split()[0])
+            else:
+                reply_text = t["need_address"]
         if notes:
             reply_text = " ".join(notes) + "\n" + reply_text
 

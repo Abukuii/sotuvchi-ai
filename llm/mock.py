@@ -9,6 +9,7 @@ import json
 import re
 
 from catalog.text import normalize, tokenize
+from conversations.slots import extract_slots
 
 from .base import LLMProvider, LLMRequest
 
@@ -41,8 +42,6 @@ TEXTS = {
 }
 
 _PHONE_RE = re.compile(r"(\+?\d[\d\s\-()]{7,}\d)")
-_NAME_RE = re.compile(r"(?:ismim|ism|меня зовут|имя|мен)\s*[:\-]?\s*([A-Za-zА-Яа-яЁёЎўҚқҒғҲҳ'’ʻ]{2,30})", re.IGNORECASE)
-_ADDR_RE = re.compile(r"(?:manzil|adres|адрес)\s*[:\-]?\s*(.{5,200})", re.IGNORECASE)
 
 
 def _quantity(text: str) -> int:
@@ -67,20 +66,14 @@ class MockProvider(LLMProvider):
         items = list(draft.get("items") or [])
         tokens = tokenize(text)
 
-        phone_match = _PHONE_RE.search(text)
-        if phone_match:
-            draft["phone"] = re.sub(r"[^\d+]", "", phone_match.group(1))
-        name_match = _NAME_RE.search(text)
-        if name_match:
-            draft["customer_name"] = name_match.group(1).strip()
-        addr_match = _ADDR_RE.search(text)
-        if addr_match:
-            draft["address"] = addr_match.group(1).strip()
-
         wants_order = any(tok.startswith(ORDER_PREFIXES) for tok in tokens)
         if wants_order and hits and not items:
             items = [{"product_id": hits[0]["id"], "quantity": _quantity(text)}]
         draft["items"] = items
+
+        # Buyurtma boshlangan bo'lsa, ism/telefon/manzilni xabardan ajratib olamiz
+        if items:
+            draft.update(extract_slots(text, draft, allow_name=not meta.get("product_mentioned", False)))
 
         complete = bool(items and draft.get("customer_name") and draft.get("phone") and draft.get("address"))
         confirmed = complete and bool(set(tokens) & YES_TOKENS)

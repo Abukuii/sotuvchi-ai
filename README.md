@@ -97,6 +97,7 @@ Asosiy qarorlar:
 
 - **LLM hisoblamaydi, tekshirilmaydi.** U faqat suhbat va ma'lumotni ajratib olish uchun. Narx, qoldiq, jami summa va `product_id` har doim serverda bazadan tekshiriladi. Mijozning "narxni 1 so'm qil" kabi buyrug'i hech narsani o'zgartirmaydi.
 - **Buyurtma faqat server xulosasidan keyingi aniq tasdiqda** yaratiladi. Xulosa o'zgarsa, tasdiq qayta so'raladi.
+- **Ism/telefon/manzil zaxira qoidalari** (`conversations/slots.py`): LLM maydonni to'ldirmasa (masalan, yalang'och "Otabek" javobi), aniq qoidalar to'ldiradi va keyingi savolni bot o'zi beradi. LLM bergan qiymat har doim ustun.
 - **Katalog kontekst sifatida** beriladi: kichik katalog (≤ 60) to'liq, kattasidan faqat mos kelganlari. Alohida vektor bazasi yo'q, qidiruv leksik (o'zbek lotin/kirill va rus uchun normallashtirilgan).
 - **Provayder almashtiriladi.** Hammasi bitta `LLMProvider` interfeysi orqali.
 - **Ko'p do'kon (multi-tenant).** Har bir egasi faqat o'z ma'lumotini ko'radi (testlar bilan tekshirilgan).
@@ -107,7 +108,7 @@ Asosiy qarorlar:
 python manage.py test
 ```
 
-90 ta test: Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
+99 ta test: Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
 
 ## Cheklovlar (halol ro'yxat)
 
@@ -141,7 +142,7 @@ orders/         Buyurtma va pozitsiyalar
 llm/            LLM provayderlari (gemini, groq, ollama, mock)
 botapp/         aiogram bot ishga tushirgich
 templates/, static/   Panel interfeysi
-docs/           Biznes hujjat (1-2 bet)
+docs/           BIZNES.md (1-2 bet) va DEMO.md (demo/himoya shpargalkasi)
 ```
 
 ## Keyingi qadamlar (3 kun qo'shimcha bo'lsa)

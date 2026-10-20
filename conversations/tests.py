@@ -362,3 +362,117 @@ class UrlFilterTests(TestCase):
         shop.save()
         ok = {"reply": "To'lov: https://pay.example.uz/click", "intent": "question", "draft": {}, "confirmed": False}
         self.assertIn("https://pay.example.uz/click", say(shop, "tolov", FakeProvider(ok)).text)
+
+
+class SlotFillingTests(TestCase):
+    """Regressiya: buyurtmada ismdan keyingi bosqichga o'tmay qolish xatosi."""
+
+    def test_mock_flow_with_bare_answers(self):
+        shop = make_shop(owner_tg=1)
+        say(shop, "Ko'ylak narxi qancha?")
+        self.assertIn("ismingizni", say(shop, "olaman").text)
+        r = say(shop, "Otabek")
+        self.assertIn("elefon", r.text)  # ismdan keyin telefon so'raladi
+        r = say(shop, "+998 90 111 22 33")
+        self.assertIn("manzil", r.text.lower())
+        r = say(shop, "Jizzax, Navoiy 10")
+        self.assertIn("Hammasi to'g'rimi", r.text)
+        self.assertIn("Otabek", r.text)
+        self.assertIsNotNone(say(shop, "ha").order_id)
+
+    def test_name_with_surname_and_prefix_forms(self):
+        for answer, expected in [("Otabek Jasurov", "Otabek Jasurov"), ("ismim Ali", "Ali"), ("Меня зовут Иван", "Иван"), ("O'tkir", "O'tkir")]:
+            shop = make_shop(f"u{abs(hash(answer)) % 10000}")
+            say(shop, "Ko'ylak bormi?")
+            say(shop, "olaman")
+            say(shop, answer)
+            self.assertEqual(Conversation.objects.get(customer__shop=shop).draft["customer_name"], expected, answer)
+
+    def test_everything_in_one_message(self):
+        shop = make_shop()
+        say(shop, "Ko'ylak bormi?")
+        say(shop, "olaman")
+        r = say(shop, "Otabek, +998901112233, Jizzax Navoiy 10")
+        self.assertIn("Hammasi to'g'rimi", r.text)
+
+    def test_weak_llm_that_never_fills_name_does_not_stall(self):
+        """Haqiqiy LLM ismni draftga yozmasa va eski savolni takrorlasa ham, bot oldinga yuradi."""
+        shop = make_shop()
+        shirt = Product.objects.get(shop=shop, sku="KY-001")
+        stale = {
+            "reply": "Ismingizni yozing.",
+            "intent": "order",
+            "draft": {"items": [{"product_id": shirt.pk, "quantity": 1}], "customer_name": None, "phone": None, "address": None},
+            "confirmed": False,
+        }
+        provider = FakeProvider(stale)
+        say(shop, "ko'ylak olaman", provider)
+        r = say(shop, "Otabek", provider)
+        self.assertEqual(Conversation.objects.get().draft["customer_name"], "Otabek")
+        self.assertIn("telefon", r.text.lower())
+        self.assertNotIn("Ismingizni", r.text)
+        r = say(shop, "+998901112233", provider)
+        self.assertEqual(Conversation.objects.get().draft["phone"], "+998901112233")
+        self.assertIn("manzil", r.text.lower())
+        r = say(shop, "Jizzax, Navoiy 10", provider)
+        self.assertIn("Hammasi to'g'rimi", r.text)
+
+    def test_llm_value_wins_over_rules(self):
+        shop = make_shop()
+        shirt = Product.objects.get(shop=shop, sku="KY-001")
+        reply = {
+            "reply": "ok",
+            "intent": "order",
+            "draft": {"items": [{"product_id": shirt.pk, "quantity": 1}], "customer_name": "Otabek Jasurovich"},
+            "confirmed": False,
+        }
+        say(shop, "olaman", FakeProvider(reply))
+        self.assertEqual(Conversation.objects.get().draft["customer_name"], "Otabek Jasurovich")
+
+    def test_product_question_is_not_taken_as_name(self):
+        shop = make_shop()
+        say(shop, "Ko'ylak bormi?")
+        say(shop, "olaman")
+        say(shop, "Krossovka bormi")
+        say(shop, "ha")
+        say(shop, "yoq")
+        say(shop, "rahmat")
+        say(shop, "Ko'ylak 2 ta?")
+        self.assertEqual(Conversation.objects.get().draft.get("customer_name", ""), "")
+
+    def test_invalid_phone_in_bare_answer_asks_again(self):
+        shop = make_shop()
+        say(shop, "Ko'ylak bormi?")
+        say(shop, "olaman")
+        say(shop, "Ali")
+        r = say(shop, "12345678901234567890")
+        self.assertEqual(Conversation.objects.get().draft.get("phone", ""), "")
+        self.assertIn("+998901234567", r.text)
+
+    def test_russian_flow(self):
+        shop = make_shop()
+        say(shop, "Сколько стоит ko'ylak?")
+        r = say(shop, "хочу заказать")
+        self.assertIn("имя", r.text)
+        r = say(shop, "Иван")
+        self.assertIn("телефон", r.text.lower())
+        r = say(shop, "+998901112233")
+        self.assertIn("адрес", r.text.lower())
+        self.assertIn("Всё верно", say(shop, "Джизак, Навои 10").text)
+
+
+class SlotExtractorUnitTests(TestCase):
+    def test_extractor(self):
+        from .slots import extract_slots as x
+
+        self.assertEqual(x("Otabek", {}), {"customer_name": "Otabek"})
+        self.assertEqual(x("2 ta olaman", {}), {})
+        self.assertEqual(x("ha", {}), {})
+        self.assertEqual(x("Ali", {"customer_name": "Vali"}), {})
+        self.assertEqual(x("tel: 90 111 22 33", {"customer_name": "A"}), {"phone": "901112233"})
+        self.assertEqual(x("Jizzax, Navoiy 10", {"customer_name": "A", "phone": "+998901112233"}), {"address": "Jizzax, Navoiy 10"})
+        self.assertEqual(x("Jizzax, Navoiy 10", {"customer_name": "A"}), {})  # telefon hali yo'q
+        self.assertEqual(x("yetkazish bormi?", {"customer_name": "A", "phone": "+998901112233"}), {})
+        self.assertEqual(x("Ko'ylak", {}, allow_name=False), {})
+        full = x("ismim Ali, manzil: Jizzax Navoiy 10, tel 901112233", {})
+        self.assertEqual((full["customer_name"], full["address"], full["phone"]), ("Ali", "Jizzax Navoiy 10", "901112233"))
