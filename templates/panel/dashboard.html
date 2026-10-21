@@ -80,8 +80,8 @@
   {% if a.chart.empty %}
     <div class="empty">Bu davrda buyurtma yo'q. Bot birinchi buyurtmani olgach, grafik shu yerda paydo bo'ladi.</div>
   {% else %}
-  <svg class="chart" viewBox="0 0 {{ a.chart.w }} {{ a.chart.h }}" role="img" aria-label="Kunlik daromad grafigi">
-    <line class="grid" x1="0" x2="{{ a.chart.w }}" y1="40" y2="40"/><line class="grid" x1="0" x2="{{ a.chart.w }}" y1="80" y2="80"/><line class="grid" x1="0" x2="{{ a.chart.w }}" y1="120" y2="120"/>
+  <svg class="chart" viewBox="0 0 {{ a.chart.w }} {{ a.chart.h }}" preserveAspectRatio="none" role="img" aria-label="Kunlik daromad grafigi">
+    {% for g in a.chart.grid %}<line class="grid" x1="0" x2="{{ a.chart.w }}" y1="{{ g }}" y2="{{ g }}"/>{% endfor %}
     {% for b in a.chart.bars %}<rect class="bar{% if b.zero %} zero{% endif %}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}"><title>{{ b.label }}: {{ b.revenue|intcomma }} so'm, {{ b.orders }} ta buyurtma</title></rect>{% endfor %}
   </svg>
   <div class="axis"><span>{{ a.chart.first }}</span><span>{{ a.chart.middle }}</span><span>{{ a.chart.last }}</span></div>
@@ -94,8 +94,8 @@
     {% if a.hours.empty %}
       <div class="empty">Bu davrda mijoz xabari yo'q.</div>
     {% else %}
-    <svg class="chart" viewBox="0 0 {{ a.hours.w }} {{ a.hours.h }}" role="img" aria-label="Soatlar bo'yicha xabarlar">
-      <line class="grid" x1="0" x2="{{ a.hours.w }}" y1="80" y2="80"/>
+    <svg class="chart" viewBox="0 0 {{ a.hours.w }} {{ a.hours.h }}" preserveAspectRatio="none" role="img" aria-label="Soatlar bo'yicha xabarlar">
+      {% for g in a.hours.grid %}<line class="grid" x1="0" x2="{{ a.hours.w }}" y1="{{ g }}" y2="{{ g }}"/>{% endfor %}
       {% for b in a.hours.bars %}<rect class="bar{% if b.night %} night{% endif %}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}"><title>{{ b.hour }}: {{ b.count }} ta xabar</title></rect>{% endfor %}
     </svg>
     <div class="axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>

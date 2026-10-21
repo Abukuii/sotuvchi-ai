@@ -8,35 +8,54 @@
   <link rel="stylesheet" href="{% static 'style.css' %}">
   <script src="{% static 'app.js' %}" defer></script>
 </head>
-<body>
-  <header class="topbar">
-    <div class="inner">
-      <a class="brand" href="{% if user.is_authenticated %}{% url 'dashboard' %}{% else %}{% url 'landing' %}{% endif %}">Sotuvchi AI</a>
-      {% if user.is_authenticated %}
-      <nav>
-        {% url 'dashboard' as u_dash %}{% url 'catalog' as u_cat %}{% url 'orders' as u_ord %}{% url 'conversations' as u_conv %}{% url 'shop_settings' as u_set %}
-        <a href="{{ u_dash }}" {% if request.path == u_dash %}class="active"{% endif %}>Boshqaruv</a>
-        <a href="{{ u_cat }}" {% if u_cat in request.path %}class="active"{% endif %}>Katalog</a>
-        <a href="{{ u_ord }}" {% if u_ord in request.path %}class="active"{% endif %}>Buyurtmalar</a>
-        <a href="{{ u_conv }}" {% if u_conv in request.path %}class="active"{% endif %}>Suhbatlar</a>
-        <a href="{{ u_set }}" {% if u_set in request.path %}class="active"{% endif %}>Sozlamalar</a>
-      </nav>
-      <a class="userlink" href="{% url 'password_change' %}">{{ user.get_username }}</a>
-      <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="linkbtn" type="submit">Chiqish</button></form>
-      {% else %}
-      <nav class="public-nav">
-        <a href="{% url 'landing' %}#qanday">Qanday ishlaydi</a>
-        <a href="{% url 'landing' %}#tariflar">Tariflar</a>
-        <a href="{% url 'landing' %}#savollar">Savollar</a>
-      </nav>
-      <a class="userlink" href="{% url 'login' %}">Kirish</a>
-      <a class="btn nav-cta" href="{% url 'signup' %}">Boshlash</a>
-      {% endif %}
+<body{% block body_attrs %}{% if user.is_authenticated %} class="has-sidebar"{% endif %}{% endblock %}>
+{% block chrome_open %}
+{% if user.is_authenticated %}
+<div class="shell">
+  <aside class="sidebar" id="sidebar" aria-label="Asosiy menyu">
+    <div class="sb-head">
+      <a class="brand" href="{% url 'dashboard' %}"><span class="brand-text">Sotuvchi AI</span></a>
+      <button type="button" class="icon-btn sb-collapse" data-sidebar-toggle aria-controls="sidebar" aria-expanded="true" aria-label="Menyuni yig'ish" title="Menyuni yig'ish / kengaytirish">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="collapse" %}</svg>
+      </button>
     </div>
-  </header>
-  <main>
-    {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
-    {% block content %}{% endblock %}
-  </main>
+    {% url 'dashboard' as u_dash %}{% url 'catalog' as u_cat %}{% url 'orders' as u_ord %}{% url 'conversations' as u_conv %}{% url 'shop_settings' as u_set %}{% url 'password_change' as u_pw %}
+    <nav class="sb-nav">
+      <a href="{{ u_dash }}" title="Boshqaruv"{% if request.path == u_dash %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="dashboard" %}</svg><span class="lbl">Boshqaruv</span></a>
+      <a href="{{ u_cat }}" title="Katalog"{% if u_cat in request.path %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="catalog" %}</svg><span class="lbl">Katalog</span></a>
+      <a href="{{ u_ord }}" title="Buyurtmalar"{% if u_ord in request.path %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="orders" %}</svg><span class="lbl">Buyurtmalar</span></a>
+      <a href="{{ u_conv }}" title="Suhbatlar"{% if u_conv in request.path %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="chat" %}</svg><span class="lbl">Suhbatlar</span></a>
+      <a href="{{ u_set }}" title="Sozlamalar"{% if u_set in request.path %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="settings" %}</svg><span class="lbl">Sozlamalar</span></a>
+    </nav>
+    <div class="sb-foot">
+      <a class="sb-user{% if request.path == u_pw %} active{% endif %}" href="{{ u_pw }}" title="Parolni o'zgartirish"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="user" %}</svg><span class="lbl">{{ user.get_username }}</span></a>
+      <form method="post" action="{% url 'logout' %}">{% csrf_token %}
+        <button class="sb-logout" type="submit" title="Chiqish"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="logout" %}</svg><span class="lbl">Chiqish</span></button>
+      </form>
+    </div>
+  </aside>
+  <div class="scrim" data-sidebar-close hidden></div>
+  <div class="content">
+    <header class="mobilebar">
+      <button type="button" class="icon-btn" data-sidebar-open aria-controls="sidebar" aria-expanded="false" aria-label="Menyuni ochish"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="menu" %}</svg></button>
+      <a class="brand" href="{% url 'dashboard' %}">Sotuvchi AI</a>
+    </header>
+    <main>
+{% else %}
+{% include "partials/public_header.html" %}
+<main>
+{% endif %}
+{% endblock %}
+      {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+      {% block content %}{% endblock %}
+{% block chrome_close %}
+{% if user.is_authenticated %}
+    </main>
+  </div>
+</div>
+{% else %}
+</main>
+{% endif %}
+{% endblock %}
 </body>
 </html>

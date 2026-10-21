@@ -278,31 +278,43 @@ class PasswordChangeTests(BaseTestCase):
 
 
 class PalettePolicyTests(TestCase):
-    """Interfeys faqat oq, qora (neytral) va yashil ranglardan iborat bo'lishi kerak."""
+    """Interfeys faqat qora/oq (neytral) va xakki-zaytun (yashil-sariq oralig'i) ranglaridan iborat bo'lishi kerak."""
 
     HEX = re.compile(r"#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b")
 
     @staticmethod
-    def hue_ok(r, g, b):
+    def allowed(r, g, b):
+        import colorsys
+
         mx, mn = max(r, g, b), min(r, g, b)
         if mx - mn <= 12:  # neytral: oq/kulrang/qora
             return True
-        # yashil: g eng katta kanal va r, b dan sezilarli ustun
-        return g == mx and g - max(r, b) >= 8
+        hue = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)[0] * 360
+        return 60 <= hue <= 150  # xakki/zaytun/yashil; qizil, ko'k, binafsha, to'q sariq emas
 
     def css(self):
         return (Path(settings.BASE_DIR) / "static" / "style.css").read_text()
 
-    def test_all_css_colors_are_neutral_or_green(self):
+    def test_all_css_colors_are_neutral_or_khaki_green(self):
         bad = []
         for m in self.HEX.finditer(self.css()):
             h = m.group(1)
             if len(h) == 3:
                 h = "".join(c * 2 for c in h)
             r, g, b = (int(h[i : i + 2], 16) for i in (0, 2, 4))
-            if not self.hue_ok(r, g, b):
+            if not self.allowed(r, g, b):
                 bad.append(m.group(0))
         self.assertEqual(bad, [])
+
+    def test_pure_white_is_not_used(self):
+        """Oq rang xiralashtirilgan: toza #fff/#ffffff fon va matn sifatida ishlatilmaydi."""
+        self.assertNotRegex(self.css(), r"#(?:fff|ffffff)\b(?![0-9a-fA-F])")
+
+    def test_policy_rejects_other_hues(self):
+        for r, g, b in ((200, 30, 30), (30, 60, 200), (220, 140, 20), (140, 40, 160)):
+            self.assertFalse(self.allowed(r, g, b))
+        for r, g, b in ((169, 182, 101), (95, 111, 45), (20, 20, 20), (240, 240, 236)):
+            self.assertTrue(self.allowed(r, g, b))
 
     def test_no_other_color_notations_or_names(self):
         css = self.css()
@@ -315,7 +327,7 @@ class PalettePolicyTests(TestCase):
         for path in root.rglob("*.html"):
             text = path.read_text()
             self.assertIsNone(self.HEX.search(text), path.name)
-            self.assertIsNone(re.search(r"[\U0001F300-\U0001FAFF✅❌⬜⚠]", text), f"emoji in {path.name}")
+            self.assertIsNone(re.search(r"[\U0001F300-\U0001FAFF\u2705\u274C\u2B1C\u26A0]", text), f"emoji in {path.name}")
 
 
 class LandingTests(BaseTestCase):
@@ -343,3 +355,50 @@ class LandingTests(BaseTestCase):
         self.assertIsNone(re.search(r"\sstyle=", html))
         self.assertNotIn("<script", html.replace('<script src="/static/app.js" defer></script>', ""))
         self.assertEqual(self.client.get("/")["Content-Security-Policy"].count("unsafe-inline"), 0)
+
+
+class SidebarTests(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        make_user("owner")
+        self.client.login(username="owner", password=PASSWORD)
+
+    def test_panel_pages_have_sidebar_with_collapse_toggle(self):
+        for name in ["dashboard", "catalog", "orders", "conversations", "shop_settings", "password_change"]:
+            html = self.client.get(reverse(name)).content.decode()
+            self.assertIn('id="sidebar"', html, name)
+            self.assertIn("data-sidebar-toggle", html, name)
+            self.assertIn('aria-controls="sidebar"', html, name)
+            self.assertIn("data-sidebar-open", html, name)  # telefondagi menyu tugmasi
+            self.assertNotIn('class="topbar"', html, name)
+            self.assertEqual(html.count("<main"), 1, name)
+
+    def test_active_link_is_marked(self):
+        html = self.client.get(reverse("catalog")).content.decode()
+        self.assertRegex(html, r'href="/catalog/"[^>]*class="active"')
+        self.assertNotRegex(html, r'href="/orders/"[^>]*class="active"')
+
+    def test_logout_is_post_form_with_csrf(self):
+        html = self.client.get(reverse("dashboard")).content.decode()
+        self.assertRegex(html, r'<form method="post" action="/logout/">\s*<input type="hidden" name="csrfmiddlewaretoken"')
+
+    def test_login_and_signup_use_public_header_without_sidebar(self):
+        self.client.logout()
+        for name in ["login", "signup"]:
+            html = self.client.get(reverse(name)).content.decode()
+            self.assertNotIn('id="sidebar"', html)
+            self.assertIn('class="topbar"', html)
+
+    def test_logged_in_landing_uses_public_header(self):
+        html = self.client.get("/").content.decode()
+        self.assertNotIn('id="sidebar"', html)
+        self.assertIn("Panelga o'tish", html)
+
+    def test_sidebar_script_and_css_are_wired(self):
+        self.assertIn("sidebar-collapsed", (Path(settings.BASE_DIR) / "static" / "app.js").read_text())
+        css = (Path(settings.BASE_DIR) / "static" / "style.css").read_text()
+        for needle in ("body.sb-collapsed", "body.sb-open", "@media (max-width: 860px)"):
+            self.assertIn(needle, css)
+
+    def test_charts_are_compact(self):
+        self.assertLessEqual(analytics.CHART_H, 110)

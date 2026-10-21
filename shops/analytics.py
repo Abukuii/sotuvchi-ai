@@ -26,7 +26,7 @@ LOW_STOCK_THRESHOLD = 3
 TOP_PRODUCTS_LIMIT = 5
 STOCK_ALERTS_LIMIT = 8
 
-CHART_W, CHART_H = 600, 160
+CHART_W, CHART_H = 600, 96
 
 
 def parse_days(raw) -> int:
@@ -166,6 +166,7 @@ def _revenue_bars(series: dict[date, dict]) -> dict:
         "empty": peak == 0,
         "w": CHART_W,
         "h": CHART_H,
+        "grid": [round(CHART_H * f) for f in (0.25, 0.5, 0.75)],
     }
 
 
@@ -210,6 +211,7 @@ def _hour_bars(shop, period: Period) -> dict:
         "empty": total == 0,
         "w": CHART_W,
         "h": CHART_H,
+        "grid": [round(CHART_H * f) for f in (0.25, 0.5, 0.75)],
     }
 
 

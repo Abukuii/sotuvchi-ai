@@ -76,7 +76,7 @@ Pastki menyu (Katalog, Savat, Buyurtmalarim, Ma'lumot, Sozlamalar) va inline tug
 
 ## Dizayn
 
-Ochiq bosh sahifa (`/`) va boshqaruv paneli (`/panel/`): qorong'i mavzu birinchi, yorug' mavzu avtomatik; faqat qora, oq va yashil ranglar.
+Ochiq bosh sahifa (`/`) va boshqaruv paneli (`/panel/`). Panelda yon menyu: kompyuterda yig'iladi/kengayadi (holati eslab qolinadi), telefonda chiqib turadigan menyu (Esc va fon bosilganda yopiladi). Qorong'i mavzu birinchi, yorug' mavzu avtomatik. Palitra: qora, xiralashtirilgan oq va xakki (zaytun); testlar boshqa ranglarni rad etadi.
 
 ## Boshqaruv paneli analitikasi
 
@@ -121,7 +121,7 @@ Asosiy qarorlar:
 python manage.py test
 ```
 
-220 ta test (SQLite va PostgreSQL da o'tgan): analitika (davr chegaralari, bekorlar, oldingi davr bilan solishtirish, kechki xabarlar ulushi), CSP/sarlavhalar, rang palitrasi (faqat oq/qora/yashil),  Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
+229 ta test (SQLite va PostgreSQL da o'tgan): analitika (davr chegaralari, bekorlar, oldingi davr bilan solishtirish, kechki xabarlar ulushi), CSP/sarlavhalar, rang palitrasi (faqat oq/qora/yashil),  Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
 
 ## Cheklovlar (halol ro'yxat)
 
