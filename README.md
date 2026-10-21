@@ -70,6 +70,14 @@ Kalitlar kodda saqlanmaydi, `.env` esa `.gitignore` da.
 
 Panelda **Katalog → Shablonni yuklab olish**. Ustunlar (o'zbek, rus yoki ingliz nomlari qabul qilinadi): `Nomi`, `Narxi` (majburiy), `Qoldiq`, `Toifa`, `Tavsif`, `Kod`. Qayta yuklanganda mavjud mahsulotlar kod yoki nom bo'yicha yangilanadi. Xato qatorlar o'tkazib yuboriladi va sabablari ko'rsatiladi.
 
+## Telegram bot tugmalari
+
+Pastki menyu (Katalog, Savat, Buyurtmalarim, Ma'lumot, Sozlamalar) va inline tugmalar: toifa → mahsulot kartochkasi (miqdor tanlash) → savat → buyurtma → tasdiqlash. Til sozlamasi (uz/ru), operatorga uzatish, "ma'lumotlarimni o'chirish". Buyruqlar: /menu /catalog /cart /orders /info /settings. Tugmalar AI ni chaqirmaydi (tez va deterministik); erkin matn esa AI ga boradi. Eski "Tasdiqlash" tugmasi o'zgargan buyurtmani tasdiqlay olmaydi (qoralama versiyasi tekshiriladi).
+
+## Dizayn
+
+Ochiq bosh sahifa (`/`) va boshqaruv paneli (`/panel/`): qorong'i mavzu birinchi, yorug' mavzu avtomatik; faqat qora, oq va yashil ranglar.
+
 ## Boshqaruv paneli analitikasi
 
 Daromad, buyurtmalar, o'rtacha chek, konversiya, kunlik daromad va soatlar grafigi (SVG, tashqi kutubxonasiz), kechki (21:00–09:00) xabarlar ulushi, buyurtma holatlari, top mahsulotlar, ombor ogohlantirishlari. Davr: 7/30/90 kun, oldingi shuncha kun bilan solishtiriladi; bekor qilingan buyurtmalar daromadga kirmaydi. Interfeys faqat oq, qora va yashil ranglardan iborat (qorong'i rejim ham).
@@ -113,7 +121,7 @@ Asosiy qarorlar:
 python manage.py test
 ```
 
-166 ta test (SQLite va PostgreSQL da o'tgan): analitika (davr chegaralari, bekorlar, oldingi davr bilan solishtirish, kechki xabarlar ulushi), CSP/sarlavhalar, rang palitrasi (faqat oq/qora/yashil),  Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
+220 ta test (SQLite va PostgreSQL da o'tgan): analitika (davr chegaralari, bekorlar, oldingi davr bilan solishtirish, kechki xabarlar ulushi), CSP/sarlavhalar, rang palitrasi (faqat oq/qora/yashil),  Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
 
 ## Cheklovlar (halol ro'yxat)
 

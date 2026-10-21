@@ -8,20 +8,30 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.exceptions import TelegramAPIError, TelegramUnauthorizedError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramUnauthorizedError
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import (
+    BotCommand,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+)
 from asgiref.sync import sync_to_async
 from django.db import close_old_connections
 
 from conversations.engine import handle_message
+
+from . import menu
 from shops.models import Shop
 
 logger = logging.getLogger(__name__)
 
 GREETING = {
-    "uz": "Assalomu alaykum! Men «{shop}» do'koni yordamchisiman. Mahsulot, narx yoki buyurtma haqida yozing.",
-    "ru": "Здравствуйте! Я помощник магазина «{shop}». Пишите о товарах, ценах или заказе.",
+    "uz": "👋 Assalomu alaykum!\nMen «{shop}» do'koni yordamchisiman.\n\n🛍 Katalogni tugmalar orqali ko'ring yoki mahsulot, narx va buyurtma haqida oddiy yozing.",
+    "ru": "👋 Здравствуйте!\nЯ помощник магазина «{shop}».\n\n🛍 Смотрите каталог кнопками или просто напишите о товаре, цене или заказе.",
 }
 GENERIC_ERROR = "Kechirasiz, xatolik yuz berdi. Birozdan keyin qayta yozing. / Произошла ошибка, попробуйте позже."
 MAX_TELEGRAM_CHARS = 4000
@@ -62,6 +72,87 @@ def _process(shop_id: int, telegram_id: int, username: str, full_name: str, text
 
 
 @_db_task
+def _menu_text(shop_id, user_id, username, full_name, text):
+    shop = Shop.objects.filter(pk=shop_id, is_active=True).first()
+    return (menu.handle_menu_text(shop, user_id, username, full_name, text), shop.owner_telegram_id) if shop else (None, None)
+
+
+@_db_task
+def _menu_command(shop_id, user_id, username, full_name, command):
+    shop = Shop.objects.filter(pk=shop_id, is_active=True).first()
+    return (menu.handle_command(shop, user_id, username, full_name, command), shop.owner_telegram_id) if shop else (None, None)
+
+
+@_db_task
+def _menu_callback(shop_id, user_id, username, full_name, data):
+    shop = Shop.objects.filter(pk=shop_id, is_active=True).first()
+    return (menu.handle_callback(shop, user_id, username, full_name, data), shop.owner_telegram_id) if shop else (None, None)
+
+
+@_db_task
+def _shop_language(shop_id, user_id):
+    from conversations.models import Customer
+
+    c = Customer.objects.filter(shop_id=shop_id, telegram_id=user_id).first()
+    shop = Shop.objects.filter(pk=shop_id).first()
+    lang = c.language if c else (shop.default_language if shop else "uz")
+    return lang if lang in menu.T else "uz"
+
+
+def inline_markup(rows):
+    if not rows:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=t, callback_data=d) for t, d in row] for row in rows])
+
+
+def reply_menu(lang: str) -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=label) for label in row] for row in menu.menu_labels(lang)],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+BOT_COMMANDS = [
+    BotCommand(command="menu", description="Menyu / Меню"),
+    BotCommand(command="catalog", description="Katalog / Каталог"),
+    BotCommand(command="cart", description="Savat / Корзина"),
+    BotCommand(command="orders", description="Buyurtmalarim / Мои заказы"),
+    BotCommand(command="info", description="Ma'lumot / Информация"),
+    BotCommand(command="settings", description="Sozlamalar / Настройки"),
+]
+
+
+async def _notify_owner(bot: Bot, shop_id: int, owner_id, notice) -> None:
+    if not notice:
+        return
+    if not owner_id:
+        logger.warning("Do'kon %s egasi Telegramga ulanmagan: bildirishnoma yuborilmadi", shop_id)
+        return
+    try:
+        await bot.send_message(owner_id, notice)
+    except TelegramAPIError as exc:
+        logger.warning("Egasiga xabar yuborib bo'lmadi (shop=%s): %s", shop_id, exc)
+
+
+async def _send_screen(bot: Bot, chat_id: int, screen, lang: str, edit_message: Message | None = None) -> None:
+    text = screen.text[:MAX_TELEGRAM_CHARS]
+    markup = inline_markup(screen.rows)
+    if edit_message is not None and screen.replace:
+        try:
+            await edit_message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        except TelegramBadRequest as exc:
+            if "not modified" not in str(exc):
+                await bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")  # eski xabar o'chirilgan bo'lishi mumkin
+    else:
+        await bot.send_message(
+            chat_id, text, reply_markup=markup if markup else (reply_menu(lang) if screen.show_menu else None), parse_mode="HTML"
+        )
+    if screen.followup_menu:
+        await bot.send_message(chat_id, screen.followup_menu, reply_markup=reply_menu(lang))
+
+
+@_db_task
 def _save_username(shop_id: int, username: str) -> None:
     Shop.objects.filter(pk=shop_id).update(bot_username=username[:64])
 
@@ -93,7 +184,67 @@ def build_dispatcher(shop_id: int) -> Dispatcher:
         shop = await _get_shop(shop_id)
         if shop is None:
             return
-        await message.answer(GREETING.get(shop.default_language, GREETING["uz"]).format(shop=shop.name))
+        lang = await _shop_language(shop_id, user.id)
+        await message.answer(GREETING.get(lang, GREETING["uz"]).format(shop=shop.name), reply_markup=reply_menu(lang))
+
+    @router.message(Command("menu", "catalog", "cart", "orders", "info", "settings", "help"))
+    async def on_command(message: Message, command: CommandObject, bot: Bot):
+        user = message.from_user
+        if user is None:
+            return
+        try:
+            async with _lock_for(shop_id, user.id):
+                screen, owner_id = await _menu_command(shop_id, user.id, user.username or "", user.full_name or "", command.command)
+                lang = await _shop_language(shop_id, user.id)
+        except Exception:
+            logger.exception("Buyruqni qayta ishlashda xato (shop=%s)", shop_id)
+            await message.answer(GENERIC_ERROR)
+            return
+        if screen is not None:
+            await _send_screen(bot, message.chat.id, screen, lang)
+            await _notify_owner(bot, shop_id, owner_id, screen.owner_notice)
+
+    @router.message(F.text.in_(menu.LABEL_TO_KEY.keys()))
+    async def on_menu_button(message: Message, bot: Bot):
+        user = message.from_user
+        if user is None or message.text is None:
+            return
+        try:
+            async with _lock_for(shop_id, user.id):
+                screen, owner_id = await _menu_text(shop_id, user.id, user.username or "", user.full_name or "", message.text)
+                lang = await _shop_language(shop_id, user.id)
+        except Exception:
+            logger.exception("Menyu tugmasida xato (shop=%s)", shop_id)
+            await message.answer(GENERIC_ERROR)
+            return
+        if screen is not None:
+            await _send_screen(bot, message.chat.id, screen, lang)
+            await _notify_owner(bot, shop_id, owner_id, screen.owner_notice)
+
+    @router.callback_query(F.data.startswith("m:"))
+    async def on_callback(call: CallbackQuery, bot: Bot):
+        user = call.from_user
+        message = call.message
+        if not isinstance(message, Message) or message.chat.type != "private":
+            await call.answer()
+            return
+        try:
+            async with _lock_for(shop_id, user.id):
+                screen, owner_id = await _menu_callback(shop_id, user.id, user.username or "", user.full_name or "", call.data or "")
+                lang = await _shop_language(shop_id, user.id)
+        except Exception:
+            logger.exception("Tugma bosilganda xato (shop=%s)", shop_id)
+            await call.answer(GENERIC_ERROR[:150], show_alert=True)
+            return
+        if screen is None:
+            await call.answer()
+            return
+        try:
+            await call.answer(screen.toast[:190] if screen.toast else None)
+        except TelegramAPIError:
+            pass  # eski tugma: javob muddati o'tgan bo'lishi mumkin
+        await _send_screen(bot, message.chat.id, screen, lang, edit_message=message)
+        await _notify_owner(bot, shop_id, owner_id, screen.owner_notice)
 
     @router.message(F.text)
     async def on_text(message: Message, bot: Bot):
@@ -115,15 +266,12 @@ def build_dispatcher(shop_id: int) -> Dispatcher:
             return
         if reply is None:
             return
-        await message.answer(reply.text[:MAX_TELEGRAM_CHARS])
-        if reply.owner_notice:
-            if owner_id:
-                try:
-                    await bot.send_message(owner_id, reply.owner_notice)
-                except TelegramAPIError as exc:
-                    logger.warning("Egasiga xabar yuborib bo'lmadi (shop=%s): %s", shop_id, exc)
-            else:
-                logger.warning("Do'kon %s egasi Telegramga ulanmagan: bildirishnoma yuborilmadi", shop_id)
+        markup = None
+        if reply.awaiting_confirmation:  # AI buyurtma xulosasini ko'rsatdi: "Ha" yozmasdan tugma bilan tasdiqlash
+            tt = menu.T[reply.lang if reply.lang in menu.T else "uz"]
+            markup = inline_markup([[(tt["confirm"], f"m:ok:{reply.draft_version}"), (tt["cancel"], "m:no")]])
+        await message.answer(reply.text[:MAX_TELEGRAM_CHARS], reply_markup=markup)
+        await _notify_owner(bot, shop_id, owner_id, reply.owner_notice)
 
     @router.message()
     async def on_other(message: Message):
@@ -139,6 +287,10 @@ async def _run_one(shop_id: int, token: str, bad_tokens: dict[int, str]) -> None
     try:
         me = await bot.get_me()
         await _save_username(shop_id, me.username or "")
+        try:
+            await bot.set_my_commands(BOT_COMMANDS)
+        except TelegramAPIError as exc:
+            logger.warning("Bot buyruqlarini o'rnatib bo'lmadi (shop=%s): %s", shop_id, exc)
         logger.info("Bot ishga tushdi: @%s (shop=%s)", me.username, shop_id)
         await build_dispatcher(shop_id).start_polling(bot, handle_signals=False, close_bot_session=False)
     except TelegramUnauthorizedError:

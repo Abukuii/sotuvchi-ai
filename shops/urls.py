@@ -5,7 +5,8 @@ from . import views
 from .auth_views import ThrottledLoginView
 
 urlpatterns = [
-    path("", views.dashboard, name="dashboard"),
+    path("", views.landing, name="landing"),
+    path("panel/", views.dashboard, name="dashboard"),
     path("login/", ThrottledLoginView.as_view(), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("password/", views.password_change, name="password_change"),

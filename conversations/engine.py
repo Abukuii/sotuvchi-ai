@@ -91,6 +91,16 @@ STR = {
 }
 
 
+def draft_version(draft: dict) -> str:
+    """Qoralama holatining qisqa belgisi: eski \"Tasdiqlash\" tugmasi yangilangan buyurtmani tasdiqlab yubormasligi uchun."""
+    import hashlib
+
+    payload = json.dumps(
+        {k: draft.get(k) for k in ("items", "customer_name", "phone", "address")}, sort_keys=True, ensure_ascii=False
+    )
+    return hashlib.sha1(payload.encode()).hexdigest()[:8]
+
+
 class AlreadyProcessed(Exception):
     """Bu buyurtma boshqa so'rov tomonidan allaqachon yaratilgan (ikki marta "Ha" bosilganda)."""
 
@@ -118,6 +128,9 @@ class BotReply:
     text: str
     owner_notice: str | None = None
     order_id: int | None = None
+    awaiting_confirmation: bool = False  # tugmali "Tasdiqlash" ko'rsatish uchun
+    draft_version: str = ""
+    lang: str = "uz"
 
 
 # ---------- yordamchi funksiyalar ----------
@@ -522,4 +535,11 @@ def handle_message(shop, telegram_id: int, username: str, full_name: str, text: 
         conversation.needs_attention = True
     conversation.save(update_fields=["draft", "awaiting_confirmation", "needs_attention"])
     _save_reply(conversation, reply_text)
-    return BotReply(text=reply_text, owner_notice=owner_notice, order_id=order_id)
+    return BotReply(
+        text=reply_text,
+        owner_notice=owner_notice,
+        order_id=order_id,
+        awaiting_confirmation=awaiting,
+        draft_version=draft_version(new_draft) if awaiting else "",
+        lang=lang,
+    )

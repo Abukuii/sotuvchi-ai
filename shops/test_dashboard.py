@@ -316,3 +316,30 @@ class PalettePolicyTests(TestCase):
             text = path.read_text()
             self.assertIsNone(self.HEX.search(text), path.name)
             self.assertIsNone(re.search(r"[\U0001F300-\U0001FAFF✅❌⬜⚠]", text), f"emoji in {path.name}")
+
+
+class LandingTests(BaseTestCase):
+    def test_public_landing_for_anonymous(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Bot sotdi")
+        self.assertContains(response, reverse("signup"))
+        self.assertNotContains(response, "Chiqish")
+
+    def test_landing_for_logged_in_links_to_panel(self):
+        make_user("owner")
+        self.client.login(username="owner", password=PASSWORD)
+        response = self.client.get("/")
+        self.assertContains(response, reverse("dashboard"))
+        self.assertNotContains(response, "Bepul boshlash")
+
+    def test_panel_requires_login(self):
+        response = self.client.get(reverse("dashboard"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login/", response["Location"])
+
+    def test_landing_has_no_inline_styles_scripts_or_emoji(self):
+        html = self.client.get("/").content.decode()
+        self.assertIsNone(re.search(r"\sstyle=", html))
+        self.assertNotIn("<script", html.replace('<script src="/static/app.js" defer></script>', ""))
+        self.assertEqual(self.client.get("/")["Content-Security-Policy"].count("unsafe-inline"), 0)

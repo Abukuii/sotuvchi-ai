@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Sotuvchi AI: Telegram do'koningiz uchun AI sotuvchi{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <div class="eyebrow">Telegram do'konlari uchun AI sotuvchi</div>
+    <h1 class="display">Mijoz yozdi.<br><span class="hl">Bot sotdi.</span></h1>
+    <p class="lead">Excel katalogingizni yuklang, bot tokenini ulang. Bot o'zbek va rus tilida mijozga javob beradi, buyurtmani yig'adi va egasiga tayyor holda yuboradi. Kechasi ham.</p>
+    <div class="row">
+      {% if user.is_authenticated %}
+      <a class="btn big" href="{% url 'dashboard' %}">Panelga o'tish</a>
+      {% else %}
+      <a class="btn big" href="{% url 'signup' %}">Bepul boshlash</a>
+      <a class="btn big secondary" href="#qanday">Qanday ishlaydi</a>
+      {% endif %}
+    </div>
+    <ul class="stats">
+      <li><strong>~5 daqiqa</strong><span>sozlash vaqti</span></li>
+      <li><strong>24/7</strong><span>kechasi ham javob</span></li>
+      <li><strong>uz + ru</strong><span>ikki tilda</span></li>
+    </ul>
+  </div>
+  <div class="phone" role="img" aria-label="Namuna suhbat: mijoz va bot">
+    <div class="phone-head"><span class="dot"></span> Sotuvchi AI bot <small>namuna suhbat</small></div>
+    <div class="chat">
+      <div class="bubble user">Salom, oq ko'ylak bormi?</div>
+      <div class="bubble assistant">Ha! Erkaklar ko'ylagi (oq): 180 000 so'm. Razmerlar S, M, L, XL. Nechta olasiz?</div>
+      <div class="bubble user">2 ta, Jizzaxga yetkazasizlarmi?</div>
+      <div class="bubble assistant">Ha, yetkazamiz. Ismingiz va telefon raqamingizni yozing, buyurtmani rasmiylashtiraman.</div>
+      <div class="bubble confirm">Jami: 360 000 so'm<br>Tasdiqlaysizmi?</div>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-no">01 / Nima uchun</div>
+  <h2 class="sec-title">Javob kutib ketgan mijoz, yo'qolgan buyurtma</h2>
+  <div class="features">
+    <article class="feature"><span class="no">01</span><h3>Excel dan katalog</h3><p>Mavjud jadvalingizni yuklaysiz: nomi, narxi, qoldig'i. Qo'lda bot stsenariysi yozish shart emas.</p></article>
+    <article class="feature"><span class="no">02</span><h3>Buyurtmani o'zi yig'adi</h3><p>Ism, telefon, manzil, miqdor. Hammasi tayyor holda sizning Telegramingizga tushadi, panelda ham ko'rinadi.</p></article>
+    <article class="feature"><span class="no">03</span><h3>Narxni to'qimaydi</h3><p>Narx va qoldiq serverda bazadan olinadi. AI ularni o'zgartira olmaydi, buyurtma faqat mijoz tasdiqlagandan keyin yaratiladi.</p></article>
+  </div>
+</section>
+
+<section class="sec" id="qanday">
+  <div class="sec-no">02 / Qanday ishlaydi</div>
+  <h2 class="sec-title">To'rt qadamda ishga tushadi</h2>
+  <ol class="timeline">
+    <li><span class="no">1</span><div><h3>Ro'yxatdan o'ting</h3><p>Do'kon nomi va parol yetarli.</p></div></li>
+    <li><span class="no">2</span><div><h3>Katalogni yuklang</h3><p>Excel shablonini to'ldiring yoki o'zingizniki bilan yuboring.</p></div></li>
+    <li><span class="no">3</span><div><h3>Botni ulang</h3><p>BotFather dan olingan tokenni kiriting, u shifrlangan holda saqlanadi.</p></div></li>
+    <li><span class="no">4</span><div><h3>Buyurtmalarni qabul qiling</h3><p>Mijoz tugmalar yoki oddiy matn bilan yozadi, siz tayyor buyurtmani olasiz.</p></div></li>
+  </ol>
+</section>
+
+<section class="sec">
+  <div class="sec-no">03 / Bot ichida</div>
+  <h2 class="sec-title">Tugmalar ham, erkin suhbat ham</h2>
+  <div class="features">
+    <article class="feature"><span class="no">A</span><h3>Katalog va savat</h3><p>Toifalar, mahsulot kartochkasi, miqdor tanlash va savat. Mijoz yozmasdan ham buyurtma bera oladi.</p></article>
+    <article class="feature"><span class="no">B</span><h3>AI bilan suhbat</h3><p>"Qora sumka bormi, narxi qancha?" kabi savollarga katalog asosida javob beradi.</p></article>
+    <article class="feature"><span class="no">C</span><h3>Operatorga uzatish</h3><p>Bot bilmagan savolni egasiga yuboradi, siz panelda "e'tibor kerak" belgisini ko'rasiz.</p></article>
+  </div>
+</section>
+
+<section class="sec" id="tariflar">
+  <div class="sec-no">04 / Tariflar</div>
+  <h2 class="sec-title">Oddiy oylik obuna</h2>
+  <div class="plans">
+    <article class="plan">
+      <h3>Boshlang'ich</h3>
+      <div class="price">300 000 <small>so'm / oy</small></div>
+      <ul><li>1 ta do'kon va 1 ta bot</li><li>500 tagacha mahsulot</li><li>Buyurtma xabarlari Telegramda</li><li>Boshqaruv paneli va analitika</li></ul>
+      <a class="btn secondary" href="{% url 'signup' %}">Sinab ko'rish</a>
+    </article>
+    <article class="plan featured">
+      <h3>Kengaytirilgan</h3>
+      <div class="price">500 000 <small>so'm / oy</small></div>
+      <ul><li>Cheksiz mahsulot</li><li>Boshlang'ich tarifdagi hamma narsa</li><li>Instagram qo'shilganda ulanadi</li><li>Ustuvor yordam</li></ul>
+      <a class="btn" href="{% url 'signup' %}">Sinab ko'rish</a>
+    </article>
+  </div>
+  <p class="muted small">Narxlar boshlang'ich taklif. Birinchi mijozlar uchun o'rnatish bepul va shartlar alohida kelishiladi.</p>
+</section>
+
+<section class="sec" id="savollar">
+  <div class="sec-no">05 / Savollar</div>
+  <h2 class="sec-title">Ko'p beriladigan savollar</h2>
+  <div class="faq">
+    <details><summary>Bot noto'g'ri narx aytib yuborishi mumkinmi?</summary><p>Narx, qoldiq va jami summa har safar bazadan olinadi va tekshiriladi. AI javobidagi raqamga ishonilmaydi, buyurtma xulosasini server tuzadi.</p></details>
+    <details><summary>Bot bilmagan savolni nima qiladi?</summary><p>To'qib javob bermaydi: savolni sizga uzatadi va mijozga javob berilishini aytadi.</p></details>
+    <details><summary>Mijozlarim ma'lumoti qayerda saqlanadi?</summary><p>Sizning serveringizda. Bot tokeni shifrlanadi, mijoz ma'lumotlarini panelda yoki bot ichida o'chirish mumkin.</p></details>
+    <details><summary>Qaysi tillar qo'llab-quvvatlanadi?</summary><p>O'zbek (lotin) va rus tillari. Mijoz tilini bot o'zi aniqlaydi, sozlamalarda o'zgartirish ham mumkin.</p></details>
+  </div>
+</section>
+
+<section class="cta">
+  <h2>Keyingi mijoz yozganda, bot tayyor bo'lsin</h2>
+  {% if user.is_authenticated %}<a class="btn big" href="{% url 'dashboard' %}">Panelga o'tish</a>{% else %}<a class="btn big" href="{% url 'signup' %}">Bepul boshlash</a>{% endif %}
+</section>
+
+<footer class="site-footer">
+  <span>Sotuvchi AI</span>
+  <span class="muted small">Kichik Telegram do'konlari uchun</span>
+</footer>
+{% endblock %}

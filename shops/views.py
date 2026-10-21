@@ -54,6 +54,11 @@ def signup(request):
     return render(request, "registration/signup.html", {"form": form})
 
 
+def landing(request):
+    """Ochiq bosh sahifa: mahsulot haqida. Tizimga kirganlar uchun "Panelga o'tish" tugmasi ko'rsatiladi."""
+    return render(request, "landing.html")
+
+
 @shop_required
 def password_change(request):
     form = PasswordChangeForm(request.user, request.POST or None)
