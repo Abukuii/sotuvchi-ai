@@ -87,7 +87,7 @@ Pastki menyu (Katalog, Savat, Buyurtmalarim, Ma'lumot, Sozlamalar) va inline tug
 
 ## Dizayn
 
-Ochiq bosh sahifa (`/`) va boshqaruv paneli (`/panel/`). Panelda yon menyu: kompyuterda yig'iladi/kengayadi (holati eslab qolinadi), telefonda chiqib turadigan menyu (Esc va fon bosilganda yopiladi). Qorong'i mavzu birinchi, yorug' mavzu avtomatik. Palitra: qora, xiralashtirilgan oq va xakki (zaytun); testlar boshqa ranglarni rad etadi.
+Ochiq bosh sahifa (`/`) va boshqaruv paneli (`/panel/`). Panelda yon menyu: kompyuterda yig'iladi/kengayadi (holati eslab qolinadi), telefonda chiqib turadigan menyu (Esc va fon bosilganda yopiladi). Qorong'i mavzu birinchi, yorug' mavzu avtomatik. Palitra: qora, xiralashtirilgan oq va yorqin xakki-laym (gradient, nur, yengil animatsiya; `prefers-reduced-motion` hurmat qilinadi); testlar boshqa ranglarni rad etadi.
 
 ## Boshqaruv paneli analitikasi
 

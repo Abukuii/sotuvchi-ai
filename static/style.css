@@ -7,12 +7,14 @@
   --ink: #d8d8dc;          /* xiralashtirilgan oq */
   --ink-2: #8d8d97;
   --line: #26262e;
-  --green: #a9b665;        /* xakki (zaytun-xakki) aksent; o'zgaruvchi nomi tarixiy */
-  --green-strong: #c2cf80;
-  --green-soft: #1e2312;
+  --green: #bde03f;        /* yorqin xakki-laym aksent; o'zgaruvchi nomi tarixiy */
+  --accent2: #6fcf3f;
+  --green-strong: #d6f26a;
+  --green-soft: #1d260b;
   --on-green: #0b0b0f;
-  --bar: #a9b665;
-  --glow: #a9b66518;
+  --bar: #bde03f;
+  --glow: #bde03f24;
+  --grad: linear-gradient(135deg, #d6f26a, #8fd43f 55%, #5fc24a);
   --topbar: #0b0b0fd9;
   --topbar-text: #e4e4e8;
   --topbar-muted: #8d8d97;
@@ -29,12 +31,14 @@
     --ink: #1a1a1c;
     --ink-2: #55555c;
     --line: #dcdedb;
-    --green: #5f6f2d;
-    --green-strong: #4b5823;
-    --green-soft: #e7ebd2;
+    --green: #5a8a0f;
+    --accent2: #2f8f3a;
+    --green-strong: #447008;
+    --green-soft: #e3efc0;
     --on-green: #fafaf8;
-    --bar: #6f8036;
-    --glow: #5f6f2d14;
+    --bar: #6a9a1c;
+    --glow: #5a8a0f26;
+    --grad: linear-gradient(135deg, #7fb82a, #4f9a1f 55%, #2f8f3a);
     --topbar: #fafaf8e6;
     --topbar-text: #1a1a1c;
     --topbar-muted: #55555c;
@@ -157,7 +161,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 12px; 
 .steps li { padding: 6px 0 6px 34px; position: relative; }
 .steps li::before { content: ""; position: absolute; left: 0; top: 9px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--ink-2); }
 .steps li.done::before { background: var(--green); border-color: var(--green); }
-.steps li.done::after { content: "✓"; position: absolute; left: 4px; top: 6px; font-size: .8rem; font-weight: 800; color: var(--on-green); }
+.steps li.done::after { content: "✓"; position: absolute; left: 4px; top: 7px; line-height: 1.1; font-size: .8rem; font-weight: 800; color: var(--on-green); }
 
 /* ---- Grafiklar (SVG) ---- */
 .chart { width: 100%; height: 104px; display: block; }
@@ -366,3 +370,71 @@ code { background: var(--soft); border: 1px solid var(--line); padding: 1px 6px;
 .tab-n { opacity: .7; font-weight: 700; margin-left: 2px; }
 .sb-nav a .count { margin-left: auto; min-width: 20px; padding: 0 6px; border-radius: 99px; background: var(--green); color: var(--on-green); font-size: .72rem; font-weight: 800; text-align: center; line-height: 20px; }
 body.sb-collapsed .sb-nav a .count { display: none; }
+
+
+/* ================= Yorqin qatlam: gradientlar, nur, jonli harakat ================= */
+body::before { height: 560px;
+  background: radial-gradient(760px 420px at 50% -80px, var(--glow), transparent 70%), radial-gradient(520px 320px at 92% 60px, var(--glow), transparent 70%), radial-gradient(420px 300px at 4% 220px, var(--glow), transparent 70%); }
+.btn, button { background: var(--grad); border-color: transparent; box-shadow: 0 4px 16px var(--glow), inset 0 1px 0 #ffffff26; transition: transform .15s, box-shadow .2s, filter .15s; }
+.btn:hover, button:hover { background: var(--grad); border-color: transparent; filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 8px 26px var(--glow); }
+.btn.secondary, button.secondary { background: transparent; border-color: var(--line); box-shadow: none; filter: none; }
+.btn.secondary:hover, button.secondary:hover { background: var(--soft); border-color: var(--green); transform: translateY(-1px); }
+.btn.danger, button.danger { background: var(--ink); border-color: var(--ink); box-shadow: none; }
+.btn.danger:hover, button.danger:hover { background: var(--ink-2); border-color: var(--ink-2); filter: none; }
+
+.sb-logout, .sb-logout:hover, .linkbtn, .icon-btn { box-shadow: none; }
+.sb-logout:hover, .icon-btn:hover { transform: none; filter: none; }
+.brand::before { width: 12px; height: 12px; border-radius: 4px; background: var(--grad); box-shadow: 0 0 14px var(--green); }
+.sidebar { background: linear-gradient(180deg, var(--surface), var(--bg)); }
+.sb-nav a.active, .sb-user.active { background: linear-gradient(90deg, var(--green-soft), transparent 90%); box-shadow: inset 3px 0 0 var(--green); }
+.sb-nav a.active .ic { filter: drop-shadow(0 0 6px var(--green)); }
+.sb-nav a .count { background: var(--grad); box-shadow: 0 0 12px var(--glow); }
+.tabs a.active { background: var(--grad); box-shadow: 0 2px 12px var(--glow); }
+.tabs a.active:hover { background: var(--grad); filter: brightness(1.08); }
+h1 { background: linear-gradient(100deg, var(--ink) 40%, var(--green)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.card { background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--surface) 92%, var(--green))); }
+.card:hover { border-color: color-mix(in srgb, var(--line) 55%, var(--green)); }
+.card.green { background: linear-gradient(150deg, var(--green-soft), var(--surface) 65%); box-shadow: 0 10px 40px var(--glow); }
+.kpis > .card { position: relative; overflow: hidden; }
+.kpis > .card::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--grad); opacity: .85; }
+.kpis > .card::after { content: ""; position: absolute; right: -28px; top: -28px; width: 90px; height: 90px; border-radius: 50%; background: radial-gradient(circle, var(--glow), transparent 70%); pointer-events: none; }
+.kpis > .card:hover { transform: translateY(-3px); box-shadow: 0 14px 36px var(--glow); }
+.stat .num { background: linear-gradient(100deg, var(--ink) 55%, var(--green)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.stat .num small { -webkit-text-fill-color: var(--ink-2); }
+.badge.confirmed { background: var(--green-soft); border-color: var(--green); color: var(--green-strong); }
+.badge.delivered, .badge.ok { background: var(--grad); border-color: transparent; box-shadow: 0 0 12px var(--glow); }
+.badge.shipped { border-color: var(--accent2); color: var(--ink); box-shadow: 0 0 10px var(--glow); }
+.chart .bar, .hbar .fill { fill: var(--bar); filter: drop-shadow(0 0 3px var(--glow)); }
+.bubble.assistant { background: var(--grad); box-shadow: 0 4px 14px var(--glow); }
+.steps li.done::before { background: var(--grad); border-color: transparent; box-shadow: 0 0 10px var(--glow); }
+.flow li.done::before, .flow li.now { background: var(--grad); border-color: transparent; }
+.flow li.now { box-shadow: 0 4px 16px var(--glow); }
+.flow li.now.cancelled { background: var(--ink); }
+input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 4px var(--glow), 0 0 18px var(--glow); }
+table tr:hover td { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+
+/* Bosh sahifa */
+.hero { position: relative; }
+.hero::before { content: ""; position: absolute; inset: -40px -10% auto -10%; height: 520px; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(closest-side at 50% 40%, #000000, transparent); mask-image: radial-gradient(closest-side at 50% 40%, #000000, transparent); opacity: .55; }
+.display { font-size: clamp(2.6rem, 6.8vw, 4.9rem); }
+.hl { background: var(--grad); -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 0 22px var(--glow)); }
+.eyebrow { display: inline-block; padding: 6px 12px; border: 1px solid var(--green); border-radius: 99px; background: var(--green-soft); }
+.phone { background: linear-gradient(170deg, var(--soft), var(--surface) 45%); box-shadow: var(--shadow), 0 0 110px var(--glow); animation: float 6s ease-in-out infinite; }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.phone-head .dot { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 6px var(--green); } 50% { box-shadow: 0 0 18px var(--green), 0 0 4px var(--green-strong); } }
+.stats strong { background: var(--grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.feature { background: linear-gradient(170deg, var(--surface), color-mix(in srgb, var(--surface) 90%, var(--green))); position: relative; overflow: hidden; }
+.feature::before { content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 3px; background: var(--grad); transform: scaleX(0); transform-origin: left; transition: transform .35s; }
+.feature:hover::before { transform: scaleX(1); }
+.feature .no { display: inline-block; padding: 3px 9px; border-radius: 8px; background: var(--green-soft); border: 1px solid var(--line); }
+.timeline .no { background: var(--grad); }
+.timeline li { transition: transform .2s, border-color .2s; }
+.timeline li:hover { transform: translateY(-3px); border-color: var(--green); }
+.plan.featured { background: linear-gradient(170deg, var(--green-soft), var(--surface) 60%); box-shadow: 0 0 0 1px var(--green), 0 24px 70px var(--glow); }
+.cta { background: radial-gradient(620px 260px at 50% 0, var(--glow), transparent 70%), linear-gradient(180deg, var(--green-soft), var(--surface)); box-shadow: 0 20px 70px var(--glow); }
+.auth { background: linear-gradient(170deg, var(--surface), color-mix(in srgb, var(--surface) 90%, var(--green))); }
+h1 .badge { -webkit-text-fill-color: currentColor; margin-left: 8px; vertical-align: middle; }
+.row > label.mb, form > label.mb { display: block; }
