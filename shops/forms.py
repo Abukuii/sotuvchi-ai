@@ -9,7 +9,7 @@ from catalog.models import Product
 from .crypto import token_hash
 from .models import Shop
 
-TOKEN_RE = re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{30,50}$")
+from .botconfig import TOKEN_RE
 
 
 class SignupForm(UserCreationForm):

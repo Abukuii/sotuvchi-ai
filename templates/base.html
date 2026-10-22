@@ -19,13 +19,14 @@
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="collapse" %}</svg>
       </button>
     </div>
-    {% url 'dashboard' as u_dash %}{% url 'catalog' as u_cat %}{% url 'orders' as u_ord %}{% url 'conversations' as u_conv %}{% url 'shop_settings' as u_set %}{% url 'password_change' as u_pw %}
+    {% url 'dashboard' as u_dash %}{% url 'catalog' as u_cat %}{% url 'orders' as u_ord %}{% url 'conversations' as u_conv %}{% url 'shop_settings' as u_set %}{% url 'password_change' as u_pw %}{% url 'security' as u_sec %}
     <nav class="sb-nav">
       <a href="{{ u_dash }}" title="Boshqaruv"{% if request.path == u_dash %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="dashboard" %}</svg><span class="lbl">Boshqaruv</span></a>
       <a href="{{ u_cat }}" title="Katalog"{% if u_cat in request.path %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="catalog" %}</svg><span class="lbl">Katalog</span></a>
-      <a href="{{ u_ord }}" title="Buyurtmalar"{% if u_ord in request.path %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="orders" %}</svg><span class="lbl">Buyurtmalar</span></a>
+      <a href="{{ u_ord }}" title="Buyurtmalar"{% if u_ord in request.path %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="orders" %}</svg><span class="lbl">Buyurtmalar</span>{% if new_orders_count %}<span class="count" title="Yangi buyurtmalar">{{ new_orders_count }}</span>{% endif %}</a>
       <a href="{{ u_conv }}" title="Suhbatlar"{% if u_conv in request.path %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="chat" %}</svg><span class="lbl">Suhbatlar</span></a>
       <a href="{{ u_set }}" title="Sozlamalar"{% if u_set in request.path %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="settings" %}</svg><span class="lbl">Sozlamalar</span></a>
+      <a href="{{ u_sec }}" title="Xavfsizlik"{% if u_sec in request.path %} class="active" aria-current="page"{% endif %}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="shield" %}</svg><span class="lbl">Xavfsizlik</span></a>
     </nav>
     <div class="sb-foot">
       <a class="sb-user{% if request.path == u_pw %} active{% endif %}" href="{{ u_pw }}" title="Parolni o'zgartirish"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="user" %}</svg><span class="lbl">{{ user.get_username }}</span></a>

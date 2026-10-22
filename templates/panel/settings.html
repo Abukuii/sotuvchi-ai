@@ -3,7 +3,8 @@
 {% block content %}
 <h1>Sozlamalar</h1>
 <div class="card">
-  {% if shop.has_token %}<p class="muted">Joriy token: <code>{{ shop.masked_token }}</code>{% if shop.bot_username %} · @{{ shop.bot_username }}{% endif %}</p>{% endif %}
+  {% if shop.token_source == "env" %}<p class="muted">Bot tokeni serverdagi <code>.env</code> fayldan olinmoqda (<code>{{ shop.masked_token }}</code>). Bu yerda boshqa token kiritsangiz, shu token ustun bo'ladi.</p>
+  {% elif shop.has_token %}<p class="muted">Joriy token: <code>{{ shop.masked_token }}</code>{% if shop.bot_username %} · @{{ shop.bot_username }}{% endif %}</p>{% endif %}
   <form method="post">{% csrf_token %}
     {% include "partials/form.html" %}
     <button type="submit">Saqlash</button>

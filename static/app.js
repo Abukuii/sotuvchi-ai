@@ -1,6 +1,7 @@
 // Kichik yordamchi skript (inline handlerlar o'rniga: qat'iy Content-Security-Policy uchun)
 document.addEventListener("submit", function (event) {
-  var message = event.target.dataset ? event.target.dataset.confirm : null;
+  var submitter = event.submitter && event.submitter.dataset ? event.submitter.dataset.confirm : null;  // tugmaning o'z so'rovi
+  var message = submitter || (event.target.dataset ? event.target.dataset.confirm : null);
   if (message && !window.confirm(message)) {
     event.preventDefault();
   }

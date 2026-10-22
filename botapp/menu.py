@@ -102,7 +102,7 @@ T = {
         "delete_yes": "Ha, o'chirish",
         "deleted": "Ma'lumotlaringiz o'chirildi. Qayta yozsangiz, yangidan boshlaymiz.",
         "prefilled": "Oxirgi buyurtmangizdagi ma'lumotlar ishlatildi. Noto'g'ri bo'lsa, yangisini yozing.",
-        "status": {"new": "Yangi", "confirmed": "Qabul qilindi", "delivered": "Yetkazildi", "cancelled": "Bekor qilindi"},
+        "status": {"new": "Yangi", "confirmed": "Qabul qilindi", "shipped": "Yuborildi", "delivered": "Yetkazildi", "cancelled": "Bekor qilindi"},
     },
     "ru": {
         "home": "Выберите раздел или напишите вопрос, я помогу.",
@@ -150,7 +150,7 @@ T = {
         "delete_yes": "Да, удалить",
         "deleted": "Ваши данные удалены. Напишите снова, и мы начнём заново.",
         "prefilled": "Использованы данные из прошлого заказа. Если неверно, напишите новые.",
-        "status": {"new": "Новый", "confirmed": "Принят", "delivered": "Доставлен", "cancelled": "Отменён"},
+        "status": {"new": "Новый", "confirmed": "Принят", "shipped": "Отправлен", "delivered": "Доставлен", "cancelled": "Отменён"},
     },
 }
 
@@ -168,6 +168,7 @@ class Screen:
     rows: list[list[tuple[str, str]]] = field(default_factory=list)  # [(yozuv, callback_data)]
     toast: str = ""  # callback.answer() uchun qisqa xabar
     owner_notice: str | None = None
+    owner_order_id: int | None = None  # egasiga yuboriladigan xabarga holat tugmalarini qo'shish uchun
     show_menu: bool = False  # pastki doimiy menyuni ham yuborish
     replace: bool = True  # True: eski xabarni tahrirlash, False: yangi xabar
     deleted: bool = False
@@ -375,7 +376,7 @@ def screen_orders(ctx: Ctx) -> Screen:
     orders = list(Order.objects.filter(shop=ctx.shop, customer=ctx.customer).order_by("-created_at", "-pk")[:5])
     if not orders:
         return Screen(t["orders_empty"], [_home_row(ctx)])
-    icons = {"new": "🆕", "confirmed": "✅", "delivered": "🚚", "cancelled": "✖️"}
+    icons = {"new": "🆕", "confirmed": "✅", "shipped": "📦", "delivered": "🚚", "cancelled": "✖️"}
     lines = [t["orders_title"], ""]
     for o in orders:
         when = timezone.localtime(o.created_at).strftime("%d.%m")
@@ -520,7 +521,7 @@ def confirm(ctx: Ctx, version: str) -> Screen:
     notice = order_owner_notice(ctx.shop, order, ctx.customer)
     text = s["order_done"].format(id=order.pk)
     _save_reply(ctx.conv, text)
-    return Screen(f"🎉 <b>{esc(text)}</b>", [], owner_notice=notice, show_menu=True, replace=False)
+    return Screen(f"🎉 <b>{esc(text)}</b>", [], owner_notice=notice, owner_order_id=order.pk, show_menu=True, replace=False)
 
 
 def _complete(draft: dict) -> bool:

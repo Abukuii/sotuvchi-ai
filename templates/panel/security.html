@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Xavfsizlik — Sotuvchi AI{% endblock %}
+{% block content %}
+<h1>Xavfsizlik</h1>
+<div class="card">
+  <h2>Holat</h2>
+  <ul class="steps">
+    {% for label, ok in checks %}<li{% if ok %} class="done"{% endif %}>{{ label }}</li>{% endfor %}
+  </ul>
+  <form method="post" action="{% url 'revoke_sessions' %}" class="mt" data-confirm="Boshqa qurilmalardagi seanslar tugatiladi. Davom etasizmi?">{% csrf_token %}
+    <button type="submit" class="secondary">Boshqa seanslardan chiqish</button>
+    <span class="muted small">Qurilma yo'qolsa yoki boshqa joyda ochiq qolgan bo'lsa.</span>
+  </form>
+</div>
+<div class="card">
+  <h2>So'nggi hodisalar</h2>
+  <div class="table-wrap"><table class="stack">
+    <tr class="head"><th>Hodisa</th><th>Tafsilot</th><th>IP</th><th>Vaqt</th></tr>
+    {% for e, label, warn in rows %}
+    <tr><td data-label="Hodisa">{% if warn %}<span class="badge cancelled">{{ label }}</span>{% else %}{{ label }}{% endif %}</td><td data-label="Tafsilot">{{ e.detail|default:"—" }}</td><td data-label="IP">{{ e.ip|default:"—" }}</td><td data-label="Vaqt">{{ e.created_at|date:"d.m.Y H:i" }}</td></tr>
+    {% empty %}<tr><td colspan="4" class="muted">Hodisa yo'q.</td></tr>{% endfor %}
+  </table></div>
+  <p class="muted small">Jurnalda parol, token va kalitlar saqlanmaydi. Yozuvlar 180 kun saqlanadi.</p>
+</div>
+{% endblock %}

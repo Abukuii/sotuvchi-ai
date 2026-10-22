@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
+from . import botconfig
 from .crypto import decrypt, encrypt, token_hash
 
 
@@ -65,13 +66,26 @@ class Shop(models.Model):
         self.token_hash = token_hash(value) if value else ""
 
     @property
+    def effective_token(self) -> str:
+        """Ishlatiladigan token: panelniki, bo'lmasa .env (TELEGRAM_BOT_TOKEN) dagi."""
+        return botconfig.effective_token(self)
+
+    @property
+    def token_source(self) -> str:
+        return botconfig.token_source(self)
+
+    @property
+    def effective_owner_id(self):
+        return botconfig.effective_owner_id(self)
+
+    @property
     def has_token(self) -> bool:
-        return bool(self.token_encrypted)
+        return bool(self.effective_token)
 
     @property
     def masked_token(self) -> str:
         """Tokenni interfeysda to'liq ko'rsatmaslik uchun."""
-        token = self.bot_token
+        token = self.effective_token
         if not token:
             return ""
         return f"{token[:5]}…{token[-4:]}" if len(token) > 12 else "••••"
@@ -93,3 +107,19 @@ class Shop(models.Model):
             owner_telegram_id=telegram_id, owner_link_code=_new_link_code()
         )
         return updated == 1
+
+
+class AuditEvent(models.Model):
+    """Xavfsizlik jurnali: kirish, parol, token va muhim amallar. Parol, token va boshqa sirlar HECH QACHON yozilmaydi."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_events")
+    username = models.CharField(max_length=150, blank=True)
+    action = models.CharField(max_length=32)
+    detail = models.CharField(max_length=200, blank=True)
+    ip = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        verbose_name = "Xavfsizlik hodisasi"
+        verbose_name_plural = "Xavfsizlik hodisalari"

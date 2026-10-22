@@ -17,14 +17,32 @@
   </table></div>
 </div>
 <div class="card">
-  <h2>Holatni o'zgartirish</h2>
-  <form method="post" action="{% url 'order_status' order.pk %}" class="row">{% csrf_token %}
-    <select name="status" class="w-sm">
-      {% for value, label in statuses %}<option value="{{ value }}" {% if value == order.status %}selected{% endif %}>{{ label }}</option>{% endfor %}
-    </select>
-    <label><input type="checkbox" name="notify" checked> Mijozga Telegramda xabar yuborish</label>
-    <button type="submit">Saqlash</button>
-    <a class="btn secondary" href="{% url 'orders' %}">Orqaga</a>
+  <h2>Holat</h2>
+  <ol class="flow" aria-label="Buyurtma bosqichlari">
+    {% for value, label in flow %}<li class="{% if value == order.status %}now{% elif value in passed %}done{% endif %}">{{ label }}</li>{% endfor %}
+    {% if order.status == "cancelled" %}<li class="now cancelled">Bekor qilindi</li>{% endif %}
+  </ol>
+  {% if actions %}
+  <form method="post" action="{% url 'order_status' order.pk %}" id="status-form">{% csrf_token %}
+    <label class="mb"><input type="checkbox" name="notify" checked> Mijozga Telegramda xabar yuborish</label>
+    <div class="row">
+      {% for value, label in actions %}
+      <button type="submit" name="status" value="{{ value }}" class="{% if value == 'cancelled' %}danger{% elif not forloop.first %}secondary{% endif %}"{% if value == 'cancelled' %} data-confirm="Buyurtma bekor qilinsin? Mahsulot qoldig'i omborga qaytariladi."{% endif %}>{{ label }}</button>
+      {% endfor %}
+      <a class="btn secondary" href="{% url 'orders' %}">Orqaga</a>
+    </div>
   </form>
+  {% else %}
+  <p class="muted">Bu buyurtma yakunlangan — holatini o'zgartirib bo'lmaydi.</p>
+  <a class="btn secondary" href="{% url 'orders' %}">Orqaga</a>
+  {% endif %}
 </div>
+{% if history %}
+<div class="card">
+  <h2>Tarix</h2>
+  <ul class="list-clean">
+    {% for log, old, new in history %}<li class="rowline"><span>{{ old }} → <strong>{{ new }}</strong></span><span class="muted">{{ log.get_source_display }} · {{ log.created_at|date:"d.m.Y H:i" }}</span></li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
 {% endblock %}

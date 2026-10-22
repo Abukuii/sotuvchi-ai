@@ -8,11 +8,13 @@ from shops.models import Shop
 class Order(models.Model):
     STATUS_NEW = "new"
     STATUS_CONFIRMED = "confirmed"
+    STATUS_SHIPPED = "shipped"
     STATUS_DELIVERED = "delivered"
     STATUS_CANCELLED = "cancelled"
     STATUS_CHOICES = [
         (STATUS_NEW, "Yangi"),
         (STATUS_CONFIRMED, "Qabul qilindi"),
+        (STATUS_SHIPPED, "Yuborildi"),
         (STATUS_DELIVERED, "Yetkazildi"),
         (STATUS_CANCELLED, "Bekor qilindi"),
     ]
@@ -49,3 +51,21 @@ class OrderItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} × {self.quantity}"
+
+
+class OrderStatusLog(models.Model):
+    """Holat o'zgarishlari tarixi: kim (panel/bot), qachon, qaysi holatdan qaysisiga."""
+
+    SOURCE_PANEL = "panel"
+    SOURCE_BOT = "bot"
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="status_log")
+    from_status = models.CharField(max_length=12)
+    to_status = models.CharField(max_length=12)
+    source = models.CharField(
+        max_length=10, default=SOURCE_PANEL, choices=[(SOURCE_PANEL, "Panel"), (SOURCE_BOT, "Telegram")]
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]

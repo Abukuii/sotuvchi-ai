@@ -98,7 +98,7 @@ def draft_version(draft: dict) -> str:
     payload = json.dumps(
         {k: draft.get(k) for k in ("items", "customer_name", "phone", "address")}, sort_keys=True, ensure_ascii=False
     )
-    return hashlib.sha1(payload.encode()).hexdigest()[:8]
+    return hashlib.sha1(payload.encode(), usedforsecurity=False).hexdigest()[:8]
 
 
 class AlreadyProcessed(Exception):

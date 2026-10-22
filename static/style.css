@@ -146,6 +146,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 12px; 
 .badge { display: inline-block; padding: 1px 9px; border-radius: 99px; font-size: .75rem; font-weight: 700; border: 1px solid var(--ink-2); background: var(--surface); color: var(--ink); }
 .badge.new { background: var(--surface); border-color: var(--ink); }
 .badge.confirmed { background: var(--green-soft); border-color: var(--green); color: var(--ink); }
+.badge.shipped { background: var(--surface); border: 2px solid var(--green); padding: 0 8px; }
 .badge.delivered { background: var(--green); border-color: var(--green); color: var(--on-green); }
 .badge.cancelled { background: var(--ink); border-color: var(--ink); color: var(--bg); text-decoration: line-through; }
 .badge.attn { background: var(--ink); color: var(--bg); }
@@ -172,6 +173,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 12px; 
 .legend i.cancelled { background: var(--ink); }
 .legend i.new { background: var(--surface); border: 1px solid var(--ink-2); }
 .legend i.confirmed { background: var(--green-soft); border: 2px solid var(--green); }
+.legend i.shipped { background: var(--surface); border: 2px solid var(--green); }
 .legend i.delivered { background: var(--green); }
 .empty { padding: 18px 8px; text-align: center; color: var(--ink-2); }
 
@@ -182,6 +184,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 12px; 
 .stackbar { display: block; width: 100%; height: 12px; border: 1px solid var(--ink-2); border-radius: 6px; }
 .stackbar .new { fill: var(--surface); }
 .stackbar .confirmed { fill: var(--green-soft); }
+.stackbar .shipped { fill: var(--bar); }
 .stackbar .delivered { fill: var(--green); }
 .stackbar .cancelled { fill: var(--ink); }
 .rowline { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
@@ -350,3 +353,16 @@ code { background: var(--soft); border: 1px solid var(--line); padding: 1px 6px;
   form.row input.w-md { flex: 1 1 auto; width: auto; min-width: 0; }
   .row.between > .btn { width: 100%; text-align: center; }
 }
+
+/* ---- Buyurtma bosqichlari, tablar soni, yon paneldagi belgi ---- */
+.flow { list-style: none; display: flex; gap: 6px; flex-wrap: wrap; padding: 0; margin: 0 0 14px; counter-reset: f; }
+.flow li { counter-increment: f; display: flex; align-items: center; gap: 6px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 99px; color: var(--ink-2); font-size: .85rem; font-weight: 600; }
+.flow li::before { content: counter(f); display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--ink-2); font-size: .7rem; }
+.flow li.done { color: var(--ink); border-color: var(--green); }
+.flow li.done::before { background: var(--green); border-color: var(--green); color: var(--on-green); }
+.flow li.now { background: var(--green); border-color: var(--green); color: var(--on-green); }
+.flow li.now::before { border-color: var(--on-green); }
+.flow li.now.cancelled { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.tab-n { opacity: .7; font-weight: 700; margin-left: 2px; }
+.sb-nav a .count { margin-left: auto; min-width: 20px; padding: 0 6px; border-radius: 99px; background: var(--green); color: var(--on-green); font-size: .72rem; font-weight: 800; text-align: center; line-height: 20px; }
+body.sb-collapsed .sb-nav a .count { display: none; }

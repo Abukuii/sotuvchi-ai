@@ -22,9 +22,9 @@
       {% if shop.has_token %}<span class="muted small">({{ shop.masked_token }}{% if shop.bot_username %}, @{{ shop.bot_username }}{% endif %})</span>{% endif %}
     </li>
     <li{% if products_count %} class="done"{% endif %}>Katalogni yuklang — <a href="{% url 'catalog' %}">Katalog</a></li>
-    <li{% if shop.owner_telegram_id %} class="done"{% endif %}>
+    <li{% if shop.effective_owner_id %} class="done"{% endif %}>
       Buyurtma xabarlari uchun Telegramingizni ulang
-      {% if owner_link and not shop.owner_telegram_id %}— <a href="{{ owner_link }}" target="_blank" rel="noopener noreferrer">shu havolani oching</a> va «Start» ni bosing{% elif not shop.bot_username %}<span class="muted small">(bot ishga tushgach havola paydo bo'ladi)</span>{% endif %}
+      {% if owner_link and not shop.effective_owner_id %}— <a href="{{ owner_link }}" target="_blank" rel="noopener noreferrer">shu havolani oching</a> va «Start» ni bosing{% elif not shop.bot_username %}<span class="muted small">(bot ishga tushgach havola paydo bo'ladi)</span>{% endif %}
     </li>
     <li>Terminalda <code>python manage.py runbots</code> ni ishga tushiring.</li>
   </ol>

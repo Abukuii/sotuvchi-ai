@@ -24,7 +24,8 @@ from django.db import close_old_connections
 
 from conversations.engine import handle_message
 
-from . import menu
+from . import menu, owner
+from shops import botconfig
 from shops.models import Shop
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ GREETING = {
 GENERIC_ERROR = "Kechirasiz, xatolik yuz berdi. Birozdan keyin qayta yozing. / Произошла ошибка, попробуйте позже."
 MAX_TELEGRAM_CHARS = 4000
 NON_TEXT = "Iltimos, savolingizni matn ko'rinishida yozing. / Пожалуйста, напишите текстом."
+CUSTOMER_FAILED = "⚠️ Mijozga xabar yuborib bo'lmadi. / Не удалось уведомить клиента."
 OWNER_LINKED = "✅ Ulandi! Yangi buyurtmalar va muhim xabarlar endi shu yerga keladi."
 
 
@@ -68,25 +70,25 @@ def _process(shop_id: int, telegram_id: int, username: str, full_name: str, text
     if shop is None:
         return None, None
     reply = handle_message(shop, telegram_id, username, full_name, text)
-    return reply, shop.owner_telegram_id
+    return reply, shop.effective_owner_id
 
 
 @_db_task
 def _menu_text(shop_id, user_id, username, full_name, text):
     shop = Shop.objects.filter(pk=shop_id, is_active=True).first()
-    return (menu.handle_menu_text(shop, user_id, username, full_name, text), shop.owner_telegram_id) if shop else (None, None)
+    return (menu.handle_menu_text(shop, user_id, username, full_name, text), shop.effective_owner_id) if shop else (None, None)
 
 
 @_db_task
 def _menu_command(shop_id, user_id, username, full_name, command):
     shop = Shop.objects.filter(pk=shop_id, is_active=True).first()
-    return (menu.handle_command(shop, user_id, username, full_name, command), shop.owner_telegram_id) if shop else (None, None)
+    return (menu.handle_command(shop, user_id, username, full_name, command), shop.effective_owner_id) if shop else (None, None)
 
 
 @_db_task
 def _menu_callback(shop_id, user_id, username, full_name, data):
     shop = Shop.objects.filter(pk=shop_id, is_active=True).first()
-    return (menu.handle_callback(shop, user_id, username, full_name, data), shop.owner_telegram_id) if shop else (None, None)
+    return (menu.handle_callback(shop, user_id, username, full_name, data), shop.effective_owner_id) if shop else (None, None)
 
 
 @_db_task
@@ -97,6 +99,21 @@ def _shop_language(shop_id, user_id):
     shop = Shop.objects.filter(pk=shop_id).first()
     lang = c.language if c else (shop.default_language if shop else "uz")
     return lang if lang in menu.T else "uz"
+
+
+@_db_task
+def _owner_rows(shop_id: int, order_id: int):
+    from orders.models import Order
+
+    shop = Shop.objects.filter(pk=shop_id).first()
+    order = Order.objects.filter(pk=order_id, shop_id=shop_id).first()
+    return owner.order_rows(shop, order.pk, order.status) if shop and order else []
+
+
+@_db_task
+def _owner_action(shop_id: int, user_id: int, data: str):
+    shop = Shop.objects.filter(pk=shop_id, is_active=True).first()
+    return owner.handle_action(shop, user_id, data) if shop else None
 
 
 def inline_markup(rows):
@@ -123,14 +140,18 @@ BOT_COMMANDS = [
 ]
 
 
-async def _notify_owner(bot: Bot, shop_id: int, owner_id, notice) -> None:
+async def _notify_owner(bot: Bot, shop_id: int, owner_id, notice, order_id: int | None = None) -> None:
     if not notice:
         return
     if not owner_id:
         logger.warning("Do'kon %s egasi Telegramga ulanmagan: bildirishnoma yuborilmadi", shop_id)
         return
+    markup = None
+    if order_id:
+        rows = await _owner_rows(shop_id, order_id)
+        markup = inline_markup(rows)
     try:
-        await bot.send_message(owner_id, notice)
+        await bot.send_message(owner_id, notice, reply_markup=markup)
     except TelegramAPIError as exc:
         logger.warning("Egasiga xabar yuborib bo'lmadi (shop=%s): %s", shop_id, exc)
 
@@ -202,7 +223,7 @@ def build_dispatcher(shop_id: int) -> Dispatcher:
             return
         if screen is not None:
             await _send_screen(bot, message.chat.id, screen, lang)
-            await _notify_owner(bot, shop_id, owner_id, screen.owner_notice)
+            await _notify_owner(bot, shop_id, owner_id, screen.owner_notice, screen.owner_order_id)
 
     @router.message(F.text.in_(menu.LABEL_TO_KEY.keys()))
     async def on_menu_button(message: Message, bot: Bot):
@@ -219,7 +240,7 @@ def build_dispatcher(shop_id: int) -> Dispatcher:
             return
         if screen is not None:
             await _send_screen(bot, message.chat.id, screen, lang)
-            await _notify_owner(bot, shop_id, owner_id, screen.owner_notice)
+            await _notify_owner(bot, shop_id, owner_id, screen.owner_notice, screen.owner_order_id)
 
     @router.callback_query(F.data.startswith("m:"))
     async def on_callback(call: CallbackQuery, bot: Bot):
@@ -244,7 +265,43 @@ def build_dispatcher(shop_id: int) -> Dispatcher:
         except TelegramAPIError:
             pass  # eski tugma: javob muddati o'tgan bo'lishi mumkin
         await _send_screen(bot, message.chat.id, screen, lang, edit_message=message)
-        await _notify_owner(bot, shop_id, owner_id, screen.owner_notice)
+        await _notify_owner(bot, shop_id, owner_id, screen.owner_notice, screen.owner_order_id)
+
+    @router.callback_query(F.data.startswith("o:"))
+    async def on_owner_action(call: CallbackQuery, bot: Bot):
+        message = call.message
+        if not isinstance(message, Message) or message.chat.type != "private":
+            await call.answer()
+            return
+        try:
+            result = await _owner_action(shop_id, call.from_user.id, call.data or "")
+        except Exception:
+            logger.exception("Egasi tugmasida xato (shop=%s)", shop_id)
+            await call.answer(GENERIC_ERROR[:150], show_alert=True)
+            return
+        if result is None:
+            await call.answer()
+            return
+        try:
+            await call.answer(result.toast[:190] if result.toast else None)
+        except TelegramAPIError:
+            pass
+        if result.refresh:
+            base = owner.strip_status(message.text or "")
+            try:
+                await message.edit_text((base + result.text_suffix)[:MAX_TELEGRAM_CHARS], reply_markup=inline_markup(result.rows))
+            except TelegramBadRequest as exc:
+                if "not modified" not in str(exc):
+                    logger.warning("Egasi xabarini yangilab bo'lmadi (shop=%s): %s", shop_id, exc)
+        if result.customer_chat_id and result.customer_text:
+            try:
+                await bot.send_message(result.customer_chat_id, result.customer_text)
+            except TelegramAPIError as exc:
+                logger.warning("Mijozga holat xabari yuborilmadi (shop=%s): %s", shop_id, exc)
+                try:
+                    await bot.send_message(call.from_user.id, CUSTOMER_FAILED)
+                except TelegramAPIError:
+                    pass
 
     @router.message(F.text)
     async def on_text(message: Message, bot: Bot):
@@ -271,7 +328,7 @@ def build_dispatcher(shop_id: int) -> Dispatcher:
             tt = menu.T[reply.lang if reply.lang in menu.T else "uz"]
             markup = inline_markup([[(tt["confirm"], f"m:ok:{reply.draft_version}"), (tt["cancel"], "m:no")]])
         await message.answer(reply.text[:MAX_TELEGRAM_CHARS], reply_markup=markup)
-        await _notify_owner(bot, shop_id, owner_id, reply.owner_notice)
+        await _notify_owner(bot, shop_id, owner_id, reply.owner_notice, reply.order_id)
 
     @router.message()
     async def on_other(message: Message):
@@ -307,7 +364,11 @@ async def _run_one(shop_id: int, token: str, bad_tokens: dict[int, str]) -> None
 @_db_task
 def _active_shops() -> dict[int, str]:
     tokens = {s.pk: s.bot_token for s in Shop.objects.filter(is_active=True).exclude(token_encrypted="")}
-    return {pk: token for pk, token in tokens.items() if token}  # shifri ochilmaganlar o'tkazib yuboriladi
+    tokens = {pk: token for pk, token in tokens.items() if token}  # shifri ochilmaganlar o'tkazib yuboriladi
+    env_pk = botconfig.env_shop_id()  # .env dagi TELEGRAM_BOT_TOKEN (panelda tokeni yo'q do'konga)
+    if env_pk and env_pk not in tokens:
+        tokens[env_pk] = botconfig.env_token()
+    return tokens
 
 
 async def supervise(refresh_seconds: int = 15) -> None:

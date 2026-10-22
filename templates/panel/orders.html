@@ -4,12 +4,9 @@
 {% block content %}
 <h1>Buyurtmalar</h1>
 <div class="card">
-  <form method="get" class="row mb">
-    <select name="status" class="w-sm" data-autosubmit>
-      <option value="">Hammasi</option>
-      {% for value, label in statuses %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
-    </select>
-  </form>
+  <div class="tabs mb" role="tablist">
+    {% for value, label, n in tabs %}<a href="?status={{ value }}"{% if value == status %} class="active" aria-current="page"{% endif %}>{{ label }} <span class="tab-n">{{ n }}</span></a>{% endfor %}
+  </div>
   <div class="table-wrap"><table class="stack">
     <tr class="head"><th>№</th><th>Mijoz</th><th>Telefon</th><th>Mahsulotlar</th><th>Jami</th><th>Holat</th><th>Sana</th></tr>
     {% for o in page %}

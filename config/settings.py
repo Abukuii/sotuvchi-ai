@@ -75,6 +75,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "shops.context.panel",
             ],
         },
     },
@@ -135,6 +136,7 @@ LOGOUT_REDIRECT_URL = "login"
 if not DEBUG:
     SESSION_COOKIE_SECURE = env_bool("DJANGO_SECURE_COOKIES", True)
     CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+SESSION_COOKIE_AGE = 60 * 60 * 12  # 12 soat: unutilgan seans uzoq ochiq qolmaydi
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -164,6 +166,23 @@ LOGIN_LOCK_SECONDS = 15 * 60
 SIGNUP_MAX_PER_HOUR = 10  # bitta IP dan
 # Faqat ishonchli reverse-proxy orqasida yoqing, aks holda IP soxtalashtirilishi mumkin
 TRUST_X_FORWARDED_FOR = env_bool("DJANGO_TRUST_X_FORWARDED_FOR", False)
+
+# --- Loglar: sirlar (token, kalit, parol) chiqmasligi uchun hamma log yakuniy matn bo'yicha tozalanadi ---
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "safe": {"()": "shops.logsafe.RedactingFormatter", "format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "safe"}},
+    "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {"httpx": {"level": "WARNING"}, "httpcore": {"level": "WARNING"}, "aiogram.event": {"level": "WARNING"}},
+}
+
+# --- Telegram bot (ixtiyoriy: panel o'rniga .env dan) ---
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_BOT_SHOP_ID = int(os.environ["TELEGRAM_BOT_SHOP_ID"]) if os.environ.get("TELEGRAM_BOT_SHOP_ID", "").isdigit() else None
+TELEGRAM_OWNER_ID = int(os.environ["TELEGRAM_OWNER_ID"]) if os.environ.get("TELEGRAM_OWNER_ID", "").isdigit() else None
 
 # --- LLM ---
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "mock").strip().lower()

@@ -15,11 +15,13 @@ TIMEOUT_SECONDS = 5.0
 STATUS_TEXTS = {
     "uz": {
         "confirmed": "Buyurtmangiz №{id} qabul qilindi va tayyorlanmoqda.",
+        "shipped": "Buyurtmangiz №{id} yuborildi — yo'lda. Tez orada yetib boradi.",
         "delivered": "Buyurtmangiz №{id} yetkazildi. Xaridingiz uchun rahmat!",
         "cancelled": "Afsuski, buyurtmangiz №{id} bekor qilindi. Savollaringiz bo'lsa, yozing.",
     },
     "ru": {
         "confirmed": "Ваш заказ №{id} принят и готовится.",
+        "shipped": "Ваш заказ №{id} отправлен и уже в пути.",
         "delivered": "Ваш заказ №{id} доставлен. Спасибо за покупку!",
         "cancelled": "К сожалению, ваш заказ №{id} отменён. Если есть вопросы, напишите.",
     },
@@ -55,7 +57,7 @@ def notify_customer_status(order, new_status: str) -> bool | None:
     if order.customer is None:
         return None
     text = status_text(order, new_status)
-    token = order.shop.bot_token
+    token = order.shop.effective_token
     if not text or not token:
         return None
     return send_message(token, order.customer.telegram_id, text)

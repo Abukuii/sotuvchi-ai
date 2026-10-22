@@ -1,24 +1,28 @@
+from datetime import timedelta
 from functools import wraps
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, update_session_auth_hash
+from django.contrib.sessions.models import Session
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import HttpResponse
+from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from catalog.importer import ImportErrorBase, build_template_xlsx, import_catalog
 from catalog.models import Product
 from conversations.models import Conversation
+from orders import services as order_services
 from orders.models import Order
 
-from . import analytics, notify, throttle
+from . import analytics, audit, notify, throttle
 from .forms import CatalogUploadForm, ProductForm, ShopForm, SignupForm
-from .models import Shop
+from .models import AuditEvent, Shop
 
 
 def shop_required(view):
@@ -49,6 +53,7 @@ def signup(request):
             throttle.hit(ip_key, 3600)
             user = form.save()
             login(request, user)
+            audit.record(request, "signup", user=user)
             messages.success(request, "Xush kelibsiz! Avval bot tokenini ulang va katalogni yuklang.")
             return redirect("shop_settings")
     return render(request, "registration/signup.html", {"form": form})
@@ -64,7 +69,8 @@ def password_change(request):
     form = PasswordChangeForm(request.user, request.POST or None)
     if request.method == "POST" and form.is_valid():
         user = form.save()
-        update_session_auth_hash(request, user)  # joriy sessiya saqlanadi, boshqalari bekor bo'ladi
+        update_session_auth_hash(request, user)
+        audit.record(request, "password_changed")  # joriy sessiya saqlanadi, boshqalari bekor bo'ladi
         messages.success(request, "Parol yangilandi.")
         return redirect("shop_settings")
     return render(request, "registration/password_change.html", {"form": form})
@@ -79,7 +85,7 @@ def dashboard(request):
         "shop": shop,
         "a": data,
         "products_count": products_count,
-        "setup_done": bool(shop.has_token and products_count and shop.owner_telegram_id),
+        "setup_done": bool(shop.has_token and products_count and shop.effective_owner_id),
         "recent_orders": Order.objects.filter(shop=shop).prefetch_related("items")[:5],
         "llm_provider": settings.LLM_PROVIDER,
         "owner_link": f"https://t.me/{shop.bot_username}?start={shop.owner_link_code}" if shop.bot_username else "",
@@ -102,6 +108,7 @@ def shop_settings(request):
             saved.bot_token = ""
             token_changed = True
         if token_changed:
+            audit.record(request, "token_changed" if saved.bot_token else "token_removed")  # tokenning o'zi yozilmaydi
             saved.bot_username = ""  # bot qayta ishga tushganda yangilanadi
         saved.save()
         if token_changed:
@@ -116,6 +123,7 @@ def shop_settings(request):
 @require_POST
 def regenerate_link(request):
     request.shop.regenerate_link_code()
+    audit.record(request, "link_regenerated")
     messages.success(request, "Yangi ulash kodi yaratildi. Telegramni qayta ulang.")
     return redirect("dashboard")
 
@@ -147,6 +155,7 @@ def catalog_upload(request):
     except ImportErrorBase as exc:
         messages.error(request, str(exc))
         return redirect("catalog")
+    audit.record(request, "catalog_import", f"{result.created} yangi, {result.updated} yangilandi")
     messages.success(request, f"Yuklandi: {result.created} ta yangi, {result.updated} ta yangilandi, {result.skipped} ta o'tkazib yuborildi.")
     for err in result.errors[:10]:
         messages.warning(request, err)
@@ -189,18 +198,40 @@ def product_delete(request, pk):
 
 @shop_required
 def orders(request):
-    qs = Order.objects.filter(shop=request.shop).prefetch_related("items")
+    base = Order.objects.filter(shop=request.shop)
+    qs = base.prefetch_related("items")
     status = request.GET.get("status", "")
     if status in dict(Order.STATUS_CHOICES):
         qs = qs.filter(status=status)
+    else:
+        status = ""
+    counts = {r["status"]: r["n"] for r in base.values("status").annotate(n=Count("id"))}
+    tabs = [("", "Hammasi", sum(counts.values()))] + [(v, label, counts.get(v, 0)) for v, label in Order.STATUS_CHOICES]
     page = Paginator(qs, 30).get_page(request.GET.get("page"))
-    return render(request, "panel/orders.html", {"page": page, "status": status, "statuses": Order.STATUS_CHOICES})
+    return render(request, "panel/orders.html", {"page": page, "status": status, "tabs": tabs})
 
 
 @shop_required
 def order_detail(request, pk):
-    order = get_object_or_404(Order.objects.prefetch_related("items"), pk=pk, shop=request.shop)
-    return render(request, "panel/order_detail.html", {"order": order, "statuses": Order.STATUS_CHOICES})
+    order = get_object_or_404(Order.objects.prefetch_related("items", "status_log"), pk=pk, shop=request.shop)
+    labels = dict(Order.STATUS_CHOICES)
+    actions = [(value, ACTION_LABELS[value]) for value in order_services.allowed_next(order.status)]
+    history = [(log, labels.get(log.from_status, log.from_status), labels.get(log.to_status, log.to_status)) for log in order.status_log.all()]
+    flow = [(v, labels[v]) for v in order_services.FLOW]
+    passed = order_services.FLOW[: order_services.FLOW.index(order.status)] if order.status in order_services.FLOW else []
+    if order.status == Order.STATUS_CANCELLED:  # bekor qilingunga qadar bosib o'tilgan bosqichlar
+        reached = {log.from_status for log in order.status_log.all()} & set(order_services.FLOW)
+        passed = [v for v in order_services.FLOW if v in reached]
+    ctx = {"order": order, "actions": actions, "history": history, "flow": flow, "passed": passed}
+    return render(request, "panel/order_detail.html", ctx)
+
+
+ACTION_LABELS = {
+    Order.STATUS_CONFIRMED: "Qabul qilish",
+    Order.STATUS_SHIPPED: "Yuborildi deb belgilash",
+    Order.STATUS_DELIVERED: "Yetkazildi deb belgilash",
+    Order.STATUS_CANCELLED: "Bekor qilish",
+}
 
 
 @shop_required
@@ -211,11 +242,17 @@ def order_status(request, pk):
     if new_status not in dict(Order.STATUS_CHOICES):
         messages.error(request, "Noto'g'ri holat.")
         return redirect("order_detail", pk=order.pk)
-    changed = new_status != order.status
-    order.status = new_status
-    order.save(update_fields=["status"])
-    messages.success(request, "Buyurtma holati yangilandi.")
-    if changed and request.POST.get("notify") == "on":
+    try:
+        changed = order_services.change_status(order, new_status, source="panel")
+    except order_services.InvalidTransition:
+        messages.error(request, "Bu holatga o'tkazib bo'lmaydi (yetkazilgan yoki bekor qilingan buyurtma o'zgarmaydi).")
+        return redirect("order_detail", pk=order.pk)
+    if not changed:
+        messages.info(request, "Buyurtma allaqachon shu holatda.")
+        return redirect("order_detail", pk=order.pk)
+    audit.record(request, "order_status", f"#{order.pk} → {new_status}")
+    messages.success(request, "Buyurtma holati yangilandi." + (" Mahsulot qoldig'i omborga qaytarildi." if new_status == Order.STATUS_CANCELLED else ""))
+    if request.POST.get("notify") == "on":
         sent = notify.notify_customer_status(order, new_status)
         if sent is True:
             messages.success(request, "Mijozga Telegramda xabar yuborildi.")
@@ -239,6 +276,7 @@ def conversation_delete(request, pk):
     """Mijoz ma'lumotlarini o'chirish (suhbat, xabarlar, mijoz yozuvi). Buyurtmalar saqlanadi."""
     conv = get_object_or_404(Conversation.objects.select_related("customer"), pk=pk, customer__shop=request.shop)
     conv.customer.delete()
+    audit.record(request, "conversation_deleted")
     messages.success(request, "Suhbat va mijoz ma'lumotlari o'chirildi. Buyurtma yozuvlari saqlab qolindi.")
     return redirect("conversations")
 
@@ -252,3 +290,35 @@ def conversation_detail(request, pk):
         messages.success(request, "Belgilandi: hal qilindi.")
         return redirect("conversation_detail", pk=conv.pk)
     return render(request, "panel/conversation_detail.html", {"conv": conv, "chat": conv.messages.all()})
+
+
+@shop_required
+def security(request):
+    """Xavfsizlik sahifasi: so'nggi hodisalar, holat tekshiruvi va boshqa seanslardan chiqish."""
+    events = list(AuditEvent.objects.filter(Q(user=request.user) | Q(user__isnull=True, username=request.user.get_username()))[:50])
+    day_ago = timezone.now() - timedelta(days=1)
+    failed = AuditEvent.objects.filter(
+        username=request.user.get_username(), action__in=["login_failed", "login_blocked"], created_at__gte=day_ago
+    ).count()
+    checks = [
+        ("Bot tokeni bazada shifrlangan holda saqlanadi", True),
+        ("Sayt HTTPS orqali ochilgan", request.is_secure()),
+        ("So'nggi 24 soatda muvaffaqiyatsiz kirish urinishlari yo'q", failed == 0),
+    ]
+    rows = [(e, audit.LABELS.get(e.action, e.action), e.action in audit.WARN) for e in events]
+    return render(request, "panel/security.html", {"rows": rows, "checks": checks, "failed": failed})
+
+
+@shop_required
+@require_POST
+def revoke_sessions(request):
+    """Shu foydalanuvchining joriy seansdan boshqa barcha seanslarini tugatadi (yo'qolgan qurilma uchun)."""
+    current = request.session.session_key
+    removed = 0
+    for session in Session.objects.filter(expire_date__gt=timezone.now()).iterator():
+        if session.session_key != current and session.get_decoded().get("_auth_user_id") == str(request.user.pk):
+            session.delete()
+            removed += 1
+    audit.record(request, "sessions_revoked", f"{removed} ta")
+    messages.success(request, f"Boshqa seanslar tugatildi: {removed} ta.")
+    return redirect("security")

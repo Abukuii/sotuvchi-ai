@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils.html import escape
 
@@ -11,8 +11,10 @@ from catalog.models import Product
 from conversations.models import Conversation, Customer
 from orders.models import Order
 
-from . import crypto
-from .models import Shop
+from unittest import mock
+
+from . import crypto, notify
+from .models import AuditEvent, Shop
 
 PASSWORD = "S3cure-pass-123"
 TOKEN = "123456789:AAH-abcdefghijklmnopqrstuvwxyz012345"
@@ -469,3 +471,183 @@ class CustomerNotificationTests(BaseTestCase):
             with self.assertLogs("shops.notify", level="WARNING") as logs:
                 self.change("confirmed")
         self.assertNotIn(TOKEN, "\n".join(logs.output))
+
+
+ENV_TOKEN = "987654321:AAH-envtokenabcdefghijklmnopqrstuvw01"
+
+
+class EnvTokenTests(TestCase):
+    """TELEGRAM_BOT_TOKEN (.env): panel tokeni bo'lmagan bitta do'kon uchun zaxira."""
+
+    def setUp(self):
+        self.u1 = User.objects.create_user("u1", password="x12345678!")
+        self.u2 = User.objects.create_user("u2", password="x12345678!")
+        self.s1 = Shop.objects.create(owner=self.u1, name="Birinchi")
+        self.s2 = Shop.objects.create(owner=self.u2, name="Ikkinchi")
+
+    def test_env_token_goes_to_first_shop_without_token_only(self):
+        with override_settings(TELEGRAM_BOT_TOKEN=ENV_TOKEN):
+            self.assertEqual(self.s1.effective_token, ENV_TOKEN)
+            self.assertEqual(self.s2.effective_token, "")
+            self.assertEqual(self.s1.token_source, "env")
+            self.assertTrue(self.s1.has_token)
+            self.assertFalse(self.s2.has_token)
+
+    def test_explicit_shop_id(self):
+        with override_settings(TELEGRAM_BOT_TOKEN=ENV_TOKEN, TELEGRAM_BOT_SHOP_ID=self.s2.pk):
+            self.assertEqual(self.s2.effective_token, ENV_TOKEN)
+            self.assertEqual(self.s1.effective_token, "")
+
+    def test_panel_token_wins_over_env(self):
+        self.s1.bot_token = "123456789:AAH-abcdefghijklmnopqrstuvwxyz012345"
+        self.s1.save()
+        with override_settings(TELEGRAM_BOT_TOKEN=ENV_TOKEN):
+            self.assertEqual(self.s1.effective_token, "123456789:AAH-abcdefghijklmnopqrstuvwxyz012345")
+            self.assertEqual(self.s1.token_source, "panel")
+            self.assertEqual(self.s2.effective_token, ENV_TOKEN)  # env keyingi bo'sh do'konga o'tadi
+
+    def test_same_token_saved_in_panel_disables_env(self):
+        self.s2.bot_token = ENV_TOKEN
+        self.s2.save()
+        with override_settings(TELEGRAM_BOT_TOKEN=ENV_TOKEN):
+            self.assertEqual(self.s1.effective_token, "")  # ikki do'kon bir botni tinglamasin
+            self.assertEqual(self.s2.effective_token, ENV_TOKEN)
+
+    def test_malformed_env_token_ignored(self):
+        with override_settings(TELEGRAM_BOT_TOKEN="not-a-token"):
+            self.assertEqual(self.s1.effective_token, "")
+
+    def test_inactive_shop_not_chosen(self):
+        Shop.objects.filter(pk=self.s1.pk).update(is_active=False)
+        with override_settings(TELEGRAM_BOT_TOKEN=ENV_TOKEN):
+            self.assertEqual(self.s2.effective_token, ENV_TOKEN)
+
+    def test_env_owner_id_applies_to_env_shop_only(self):
+        with override_settings(TELEGRAM_BOT_TOKEN=ENV_TOKEN, TELEGRAM_OWNER_ID=4242):
+            self.assertEqual(self.s1.effective_owner_id, 4242)
+            self.assertIsNone(self.s2.effective_owner_id)
+        self.s1.owner_telegram_id = 99
+        self.s1.save()
+        with override_settings(TELEGRAM_BOT_TOKEN=ENV_TOKEN, TELEGRAM_OWNER_ID=4242):
+            self.assertEqual(self.s1.effective_owner_id, 99)  # ulangan ega ustun
+
+    def test_panel_shows_env_note_and_masks_token(self):
+        self.client.login(username="u1", password="x12345678!")
+        with override_settings(TELEGRAM_BOT_TOKEN=ENV_TOKEN):
+            html = self.client.get(reverse("shop_settings")).content.decode()
+        self.assertIn(".env", html)
+        self.assertNotIn(ENV_TOKEN, html)
+
+    def test_status_notification_uses_env_token(self):
+        order = Order.objects.create(shop=self.s1, customer=Customer.objects.create(shop=self.s1, telegram_id=5), customer_name="A", phone="1", address="a", total=1)
+        with override_settings(TELEGRAM_BOT_TOKEN=ENV_TOKEN), mock.patch("shops.notify.send_message", return_value=True) as send:
+            notify.notify_customer_status(order, "confirmed")
+        self.assertEqual(send.call_args.args[0], ENV_TOKEN)
+
+
+class SecurityLayerTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user("sec", password="x12345678!")
+        self.shop = Shop.objects.create(owner=self.user, name="S")
+
+    def actions(self):
+        return list(AuditEvent.objects.order_by("pk").values_list("action", flat=True))
+
+    def test_login_logout_failed_are_audited_without_password(self):
+        self.client.post(reverse("login"), {"username": "sec", "password": "bad-password-1"})
+        self.client.post(reverse("login"), {"username": "sec", "password": "x12345678!"})
+        self.client.post(reverse("logout"))
+        self.assertEqual(self.actions(), ["login_failed", "login", "logout"])
+        dump = " ".join(f"{e.username} {e.detail} {e.ip}" for e in AuditEvent.objects.all())
+        self.assertNotIn("bad-password-1", dump)
+        self.assertNotIn("x12345678!", dump)
+
+    def test_lockout_is_audited(self):
+        for _ in range(5):
+            self.client.post(reverse("login"), {"username": "sec", "password": "bad-password-1"})
+        self.client.post(reverse("login"), {"username": "sec", "password": "bad-password-1"})
+        self.assertIn("login_blocked", self.actions())
+
+    def test_token_change_is_audited_but_token_not_stored(self):
+        self.client.login(username="sec", password="x12345678!")
+        token = "123456789:AAH-abcdefghijklmnopqrstuvwxyz012345"
+        self.client.post(reverse("shop_settings"), {"name": "S", "bot_token": token, "default_language": "uz", "is_active": "on"})
+        self.assertIn("token_changed", self.actions())
+        self.assertFalse(any(token in f"{e.detail}{e.username}" for e in AuditEvent.objects.all()))
+
+    def test_security_page_shows_only_own_events(self):
+        other = User.objects.create_user("zzz", password="x12345678!")
+        AuditEvent.objects.create(user=other, username="zzz", action="password_changed", ip="9.9.9.9")
+        self.client.login(username="sec", password="x12345678!")
+        html = self.client.get(reverse("security")).content.decode()
+        self.assertIn("Tizimga kirish", html)
+        self.assertNotIn("9.9.9.9", html)
+
+    def test_security_requires_login(self):
+        self.assertEqual(self.client.get(reverse("security")).status_code, 302)
+        self.assertEqual(self.client.post(reverse("revoke_sessions")).status_code, 302)
+
+    def test_revoke_sessions_logs_out_other_devices_only(self):
+        other = self.client_class()
+        other.login(username="sec", password="x12345678!")
+        stranger = self.client_class()
+        User.objects.create_user("st", password="x12345678!")
+        stranger.login(username="st", password="x12345678!")
+        self.client.login(username="sec", password="x12345678!")
+        self.client.post(reverse("revoke_sessions"))
+        self.assertEqual(other.get(reverse("dashboard")).status_code, 302)  # chiqarildi
+        self.assertEqual(self.client.get(reverse("dashboard")).status_code, 200)  # joriy qoldi
+        self.assertEqual(stranger.get(reverse("dashboard")).status_code, 200)  # boshqa foydalanuvchi tegilmadi
+        self.assertIn("sessions_revoked", self.actions())
+
+    def test_audit_failure_never_breaks_login(self):
+        with mock.patch("shops.audit.AuditEvent.objects.create", side_effect=RuntimeError("db")):
+            with self.assertLogs("shops.audit", level="ERROR"):
+                response = self.client.post(reverse("login"), {"username": "sec", "password": "x12345678!"})
+        self.assertEqual(response.status_code, 302)
+
+
+class LogRedactionTests(TestCase):
+    def test_redacts_tokens_keys_and_headers(self):
+        from .logsafe import MASK, redact
+
+        token = "123456789:AAH-abcdefghijklmnopqrstuvwxyz012345"
+        samples = [
+            f"HTTP Request: POST https://api.telegram.org/bot{token}/sendMessage",
+            "key AIzaSyA1234567890abcdefghijklmnopqrstuv",
+            "gsk_abcdefghijklmnopqrstuvwxyz123456",
+            "Authorization: Bearer abcdefghijklmnop1234",
+            "api_key=supersecretvalue99 and password: hunter2hunter2",
+        ]
+        for text in samples:
+            out = redact(text)
+            self.assertIn(MASK, out)
+            for leaked in (token, "AIzaSyA1234", "gsk_abcdef", "abcdefghijklmnop1234", "supersecretvalue99", "hunter2hunter2"):
+                self.assertNotIn(leaked, out)
+
+    @override_settings(GROQ_API_KEY="plain-groq-key-without-prefix")
+    def test_redacts_configured_secret_exactly(self):
+        from .logsafe import redact
+
+        self.assertNotIn("plain-groq-key-without-prefix", redact("failed with plain-groq-key-without-prefix here"))
+
+    def test_formatter_cleans_exception_traceback(self):
+        import logging
+
+        from .logsafe import RedactingFormatter
+
+        token = "123456789:AAH-abcdefghijklmnopqrstuvwxyz012345"
+        try:
+            raise ValueError(f"bad url bot{token}")
+        except ValueError:
+            import sys
+
+            record = logging.LogRecord("x", logging.ERROR, __file__, 1, "boom %s", (token,), sys.exc_info())
+        out = RedactingFormatter("%(message)s").format(record)
+        self.assertNotIn(token, out)
+
+    def test_normal_text_untouched(self):
+        from .logsafe import redact
+
+        self.assertEqual(redact("Buyurtma №5 yuborildi, 14:30 da"), "Buyurtma №5 yuborildi, 14:30 da")

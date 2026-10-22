@@ -498,3 +498,122 @@ class BotButtonFlowTests(TransactionTestCase):
             self.feed(make_callback("m:cat:0"))
         answer = self.methods(AnswerCallbackQuery)[0]
         self.assertTrue(answer.show_alert)
+
+
+class OwnerOrderButtonTests(TransactionTestCase):
+    """Egasi Telegramda buyurtma holatini tugma bilan o'zgartiradi; mijozga xabar ketadi."""
+
+    def setUp(self):
+        self.shop = make_shop()
+        self.shop.bot_token = TOKEN
+        self.shop.save()
+        self.p = seed(self.shop)
+        self.customer = Customer.objects.create(shop=self.shop, telegram_id=CUSTOMER_ID, language="ru")
+        self.order = Order.objects.create(
+            shop=self.shop, customer=self.customer, customer_name="Ali", phone="+998901112233", address="T", total=180000
+        )
+        from orders.models import OrderItem
+
+        OrderItem.objects.create(order=self.order, product=self.p["shirt"], name="Ko'ylak", unit_price=180000, quantity=2)
+        self.p["shirt"].stock = 10
+        self.p["shirt"].save()
+        self.session = FakeSession()
+        self.bot = Bot(token=TOKEN, session=self.session)
+        self.dp = runner.build_dispatcher(self.shop.pk)
+
+    def press(self, data, user_id=OWNER_ID):
+        message = Message(
+            message_id=50,
+            date=datetime.now(),
+            chat=Chat(id=user_id, type="private"),
+            from_user=User(id=1, is_bot=True, first_name="Bot"),
+            text="🆕 Yangi buyurtma №1\nJami: 360 000",
+        )
+        call = CallbackQuery(
+            id="1", from_user=User(id=user_id, is_bot=False, first_name="E"), chat_instance="c", message=message, data=data
+        )
+
+        async def run():
+            await self.dp.feed_update(self.bot, Update(update_id=1, callback_query=call))
+
+        asyncio.run(run())
+
+    def sent(self, cls):
+        return [m for m in self.session.calls if isinstance(m, cls)]
+
+    def test_owner_notice_for_new_order_carries_buttons(self):
+        rows = runner.owner.order_rows(self.shop, self.order.pk, "new")
+        data = [d for row in rows for _, d in row]
+        self.assertEqual(data, [f"o:{self.order.pk}:{c}" for c in ("ok", "sh", "dl", "no")])
+        self.assertTrue(all(len(d.encode()) <= 64 for d in data))
+
+    def test_ship_updates_status_edits_message_and_notifies_customer(self):
+        self.press(f"o:{self.order.pk}:sh")
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "shipped")
+        edit = self.sent(EditMessageText)[0]
+        self.assertIn("Holat: Yuborildi", edit.text)
+        buttons = [b.callback_data for row in edit.reply_markup.inline_keyboard for b in row]
+        self.assertEqual(buttons, [f"o:{self.order.pk}:dl", f"o:{self.order.pk}:no"])
+        to_customer = [m for m in self.sent(SendMessage) if m.chat_id == CUSTOMER_ID]
+        self.assertEqual(len(to_customer), 1)
+        self.assertIn("отправлен", to_customer[0].text)  # mijoz tili — ruscha
+        self.assertEqual(self.order.status_log.get().source, "bot")
+
+    def test_cancel_restores_stock_and_second_press_is_harmless(self):
+        self.press(f"o:{self.order.pk}:no")
+        self.press(f"o:{self.order.pk}:no")  # eskirgan tugma
+        self.p["shirt"].refresh_from_db()
+        self.assertEqual(self.p["shirt"].stock, 12)
+        self.assertEqual(len([m for m in self.sent(SendMessage) if m.chat_id == CUSTOMER_ID]), 1)
+
+    def test_status_line_is_replaced_not_duplicated(self):
+        self.press(f"o:{self.order.pk}:ok")
+        self.press(f"o:{self.order.pk}:sh")
+        self.assertEqual(self.sent(EditMessageText)[-1].text.count("Holat:"), 1)
+
+    def test_non_owner_cannot_press(self):
+        self.press(f"o:{self.order.pk}:no", user_id=CUSTOMER_ID)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "new")
+        self.assertEqual(self.sent(EditMessageText), [])
+
+    def test_unlinked_shop_rejects_everyone(self):
+        Shop.objects.filter(pk=self.shop.pk).update(owner_telegram_id=None)
+        self.press(f"o:{self.order.pk}:no", user_id=OWNER_ID)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "new")
+
+    def test_foreign_shop_order_and_garbage_are_rejected(self):
+        other = make_shop("other")
+        foreign = Order.objects.create(shop=other, customer_name="X", phone="1", address="a", total=1)
+        for data in (f"o:{foreign.pk}:no", "o:abc:no", f"o:{self.order.pk}:zz", "o:1", "o::"):
+            self.press(data)
+        foreign.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertEqual((foreign.status, self.order.status), ("new", "new"))
+        self.assertEqual(self.sent(EditMessageText), [])
+
+    def test_customer_confirmation_sends_owner_buttons(self):
+        shop, order = self.shop, self.order
+
+        async def run():
+            await runner._notify_owner(self.bot, shop.pk, OWNER_ID, "notice", order.pk)
+
+        asyncio.run(run())
+        markup = self.sent(SendMessage)[-1].reply_markup
+        self.assertEqual(len([b for row in markup.inline_keyboard for b in row]), 4)
+
+
+class EnvBotSupervisorTests(TransactionTestCase):
+    def test_supervisor_gets_env_token_for_shop_without_panel_token(self):
+        from django.test import override_settings
+
+        env_token = "987654321:AAH-envtokenabcdefghijklmnopqrstuvw01"
+        with_panel = make_shop("a")
+        with_panel.bot_token = TOKEN
+        with_panel.save()
+        without = make_shop("b")
+        with override_settings(TELEGRAM_BOT_TOKEN=env_token):
+            wanted = asyncio.run(runner._active_shops())
+        self.assertEqual(wanted, {with_panel.pk: TOKEN, without.pk: env_token})

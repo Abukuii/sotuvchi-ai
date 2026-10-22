@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.contrib.auth.views import LoginView
 
-from . import throttle
+from . import audit, throttle
 
 
 class ThrottledLoginView(LoginView):
@@ -19,6 +19,7 @@ class ThrottledLoginView(LoginView):
             or throttle.count(pair_key) >= settings.LOGIN_MAX_ATTEMPTS
         ):
             form = self.get_form()
+            audit.record(request, "login_blocked", username=(request.POST.get("username") or "")[:150])
             form.add_error(None, "Juda ko'p muvaffaqiyatsiz urinish. 15 daqiqadan keyin qayta urinib ko'ring.")
             return self.render_to_response(self.get_context_data(form=form), status=429)
         return super().post(request, *args, **kwargs)

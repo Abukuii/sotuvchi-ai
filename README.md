@@ -55,6 +55,10 @@ Bot sozlamalari (token, yoqish/o'chirish) o'zgarsa, `runbots` ~15 soniyada o'zi 
 |---|---|
 | `DJANGO_SECRET_KEY` | Majburiy (DEBUG=0 bo'lsa), kamida 32 belgi; namuna qiymat qabul qilinmaydi |
 | `TOKEN_ENCRYPTION_KEY` | Bot tokenlarini shifrlash kaliti (bo'sh = SECRET_KEY dan). O'zgarsa tokenlar qayta kiritiladi |
+| `TELEGRAM_BOT_TOKEN` | Ixtiyoriy: bot tokeni `.env` dan (panelda token kiritilmagan do'kon uchun). Panel tokeni ustun; bitta bot — bitta do'kon |
+| `TELEGRAM_BOT_SHOP_ID` | Ixtiyoriy: `.env` tokeni qaysi do'konga tegishli (bo'sh = tokeni yo'q birinchi faol do'kon) |
+| `TELEGRAM_OWNER_ID` | Ixtiyoriy: egasining Telegram ID si (ulash kodisiz bildirishnoma olish) |
+| `GEMINI_API_KEY` / `GROQ_API_KEY` | AI kalitlari faqat `.env` dan o'qiladi, kodda va bazada saqlanmaydi |
 | `DJANGO_DEBUG` | `1` mahalliy ishlab chiqish uchun |
 | `DJANGO_ALLOWED_HOSTS` | Vergul bilan ajratilgan hostlar |
 | `DATABASE_URL` | Bo'sh = SQLite. PostgreSQL: `postgres://user:pass@host:5432/db` |
@@ -69,6 +73,13 @@ Kalitlar kodda saqlanmaydi, `.env` esa `.gitignore` da.
 ## Excel shabloni
 
 Panelda **Katalog → Shablonni yuklab olish**. Ustunlar (o'zbek, rus yoki ingliz nomlari qabul qilinadi): `Nomi`, `Narxi` (majburiy), `Qoldiq`, `Toifa`, `Tavsif`, `Kod`. Qayta yuklanganda mavjud mahsulotlar kod yoki nom bo'yicha yangilanadi. Xato qatorlar o'tkazib yuboriladi va sabablari ko'rsatiladi.
+
+## Buyurtma holati
+
+Oqim: **Yangi → Qabul qilindi → Yuborildi → Yetkazildi**; bekor qilish Yangi/Qabul/Yuborildi dan. Oraliq bosqichni o'tkazib yuborish mumkin. Yetkazildi va Bekor qilindi — yakuniy. Bekor qilinsa, ombor qoldig'i qaytariladi (bir marta, qator qulflanadi). Har o'zgarish tarixga yoziladi (panel/Telegram), mijozga o'z tilida xabar boradi.
+
+- **Panelda:** buyurtma sahifasida faqat mumkin bo'lgan tugmalar, bosqichlar chizig'i, tarix; ro'yxatda holat tablari (soni bilan); yon panelda yangi buyurtmalar belgisi.
+- **Telegramda (egasi):** yangi buyurtma xabari tugmalar bilan keladi (Qabul / Yuborildi / Yetkazildi / Bekor). Faqat ulangan ega bosa oladi, buyurtma shu do'konniki bo'lishi shart.
 
 ## Telegram bot tugmalari
 
@@ -92,6 +103,8 @@ Daromad, buyurtmalar, o'rtacha chek, konversiya, kunlik daromad va soatlar grafi
 - **Bot faqat shaxsiy chatlarda** javob beradi; spamga qarshi daqiqada 12 xabar chegarasi.
 - **Content-Security-Policy** (`'self'` faqat, inline skript/uslubsiz), `Permissions-Policy`, shaxsiy sahifalar `no-store`; parolni panelda almashtirish (`/password/`).
 - Django: CSRF, `HttpOnly`/`SameSite` cookie, `X-Frame-Options: DENY`, `nosniff`; `DEBUG=0` da secure cookie; HTTPS sozlamalari `.env` orqali yoqiladi.
+- **Xavfsizlik jurnali** (`/security/`): kirish, chiqish, xato urinishlar, bloklanish, parol/token o'zgarishi, katalog yuklash, buyurtma holati. Parol va token yozilmaydi; 180 kun saqlanadi. Shu sahifadan "boshqa seanslardan chiqish" mumkin. Seans 12 soat.
+- **Loglarda sirlar yashiriladi:** Telegram tokeni, Gemini/Groq kalitlari, `Authorization`, `SECRET_KEY` yakuniy log matnidan (istisno izi bilan) tozalanadi; `httpx` URL loglari o'chirilgan (Telegram URL tokenni o'z ichiga oladi).
 - Mijoz ma'lumotini panelda o'chirish mumkin (buyurtma yozuvlari saqlanadi).
 
 ## Arxitektura
@@ -121,7 +134,7 @@ Asosiy qarorlar:
 python manage.py test
 ```
 
-229 ta test (SQLite va PostgreSQL da o'tgan): analitika (davr chegaralari, bekorlar, oldingi davr bilan solishtirish, kechki xabarlar ulushi), CSP/sarlavhalar, rang palitrasi (faqat oq/qora/yashil),  Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
+275 ta test (SQLite va PostgreSQL da o'tgan): analitika (davr chegaralari, bekorlar, oldingi davr bilan solishtirish, kechki xabarlar ulushi), CSP/sarlavhalar, rang palitrasi (faqat oq/qora/yashil),  Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
 
 ## Cheklovlar (halol ro'yxat)
 
