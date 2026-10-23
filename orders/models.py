@@ -25,6 +25,8 @@ class Order(models.Model):
     phone = models.CharField("Telefon", max_length=20)
     address = models.TextField("Manzil")
     total = models.DecimalField("Jami (so'm)", max_digits=14, decimal_places=0, default=0)
+    latitude = models.FloatField("Kenglik", null=True, blank=True)
+    longitude = models.FloatField("Uzunlik", null=True, blank=True)
     status = models.CharField("Holati", max_length=12, choices=STATUS_CHOICES, default=STATUS_NEW)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -32,6 +34,10 @@ class Order(models.Model):
         verbose_name = "Buyurtma"
         verbose_name_plural = "Buyurtmalar"
         ordering = ["-created_at"]
+
+    @property
+    def has_location(self) -> bool:
+        return self.latitude is not None and self.longitude is not None
 
     def __str__(self) -> str:
         return f"Buyurtma #{self.pk} — {self.customer_name}"

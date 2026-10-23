@@ -23,6 +23,8 @@ from catalog.text import detect_language, tokenize
 from llm import LLMError, LLMRequest, get_provider
 from orders.models import Order, OrderItem
 
+from shops import geo
+
 from .models import Conversation, Customer, Message
 from .prompts import build_system_prompt
 from .slots import extract_slots
@@ -38,7 +40,12 @@ STR = {
         "already": "Buyurtmangiz allaqachon qabul qilingan. Yangi buyurtma uchun yozing.",
         "need_name": "Buyurtma uchun ismingizni yozing.",
         "need_phone": "Rahmat, {name}! Endi telefon raqamingizni yozing (masalan, +998901234567).",
-        "need_address": "Yetkazib berish manzilini yozing.",
+        "need_address": "Yetkazib berish manzilini yozing yoki 📍 lokatsiyangizni yuboring.",
+        "loc_no_cart": "Avval mahsulot tanlang: lokatsiya buyurtma manzili uchun kerak bo'ladi.",
+        "loc_bad": "Lokatsiyani o'qib bo'lmadi. Manzilni matn bilan yozing.",
+        "loc_saved": "📍 Lokatsiya qabul qilindi.",
+        "loc_btn": "📍 Lokatsiyani yuborish",
+        "loc_cancel": "Bekor qilish",
         "rate_limit": "Juda tez yozyapsiz. Bir daqiqadan keyin qayta urinib ko'ring.",
         "empty": "Savolingizni matn ko'rinishida yozing.",
         "llm_down": "Hozir javob bera olmayapman. Xabaringizni do'kon egasiga uzatdim, tez orada bog'lanishadi.",
@@ -65,7 +72,12 @@ STR = {
         "already": "Ваш заказ уже принят. Для нового заказа напишите.",
         "need_name": "Для заказа напишите ваше имя.",
         "need_phone": "Спасибо, {name}! Теперь напишите номер телефона (например, +998901234567).",
-        "need_address": "Напишите адрес доставки.",
+        "need_address": "Напишите адрес доставки или отправьте 📍 геолокацию.",
+        "loc_no_cart": "Сначала выберите товар: геолокация нужна для адреса заказа.",
+        "loc_bad": "Не удалось прочитать геолокацию. Напишите адрес текстом.",
+        "loc_saved": "📍 Геолокация получена.",
+        "loc_btn": "📍 Отправить геолокацию",
+        "loc_cancel": "Отмена",
         "rate_limit": "Вы пишете слишком быстро. Попробуйте через минуту.",
         "empty": "Напишите ваш вопрос текстом.",
         "llm_down": "Сейчас не могу ответить. Я передал ваше сообщение владельцу магазина, он скоро свяжется с вами.",
@@ -96,7 +108,9 @@ def draft_version(draft: dict) -> str:
     import hashlib
 
     payload = json.dumps(
-        {k: draft.get(k) for k in ("items", "customer_name", "phone", "address")}, sort_keys=True, ensure_ascii=False
+        {k: draft.get(k) for k in ("items", "customer_name", "phone", "address", "lat", "lon")},
+        sort_keys=True,
+        ensure_ascii=False,
     )
     return hashlib.sha1(payload.encode(), usedforsecurity=False).hexdigest()[:8]
 
@@ -131,6 +145,7 @@ class BotReply:
     awaiting_confirmation: bool = False  # tugmali "Tasdiqlash" ko'rsatish uchun
     draft_version: str = ""
     lang: str = "uz"
+    ask_location: bool = False  # manzil so'ralganda "📍 Lokatsiya yuborish" tugmasini ko'rsatish
 
 
 # ---------- yordamchi funksiyalar ----------
@@ -271,6 +286,8 @@ def create_order(shop, customer: Customer, draft: dict, lang: str, conversation:
             customer_name=draft["customer_name"],
             phone=draft["phone"],
             address=draft["address"],
+            latitude=draft.get("lat") if geo.valid_coords(draft.get("lat"), draft.get("lon")) else None,
+            longitude=draft.get("lon") if geo.valid_coords(draft.get("lat"), draft.get("lon")) else None,
         )
         for item in draft["items"]:
             product = locked[item["product_id"]]
@@ -295,6 +312,8 @@ def order_owner_notice(shop, order: Order, customer: Customer) -> str:
     lines.append(f"{t['owner_customer']}: {order.customer_name} ({_customer_label(customer)})")
     lines.append(f"{t['phone']}: {order.phone}")
     lines.append(f"{t['address']}: {order.address}")
+    if order.has_location:
+        lines.append(f"🗺 {geo.google_map_url(order.latitude, order.longitude)}")
     for item in order.items.all():
         lines.append(f"• {item.name} × {item.quantity} = {money(item.subtotal)} {t['currency']}")
     lines.append(f"{t['total']}: {money(order.total)} {t['currency']}")
@@ -346,6 +365,55 @@ def _save_reply(conversation: Conversation, text: str) -> None:
 
 
 # ---------- asosiy kirish nuqtasi ----------
+
+def handle_location(shop, telegram_id: int, username: str, full_name: str, lat, lon) -> BotReply:
+    """Mijoz lokatsiya yubordi: manzilga aylantirib qoralamaga yozadi va keyingi qadamni ko'rsatadi.
+
+    Savat/qoralama (menyu yoki AI orqali) bo'lmasa, hech narsa saqlanmaydi.
+    """
+    customer, _ = Customer.objects.get_or_create(
+        shop=shop,
+        telegram_id=telegram_id,
+        defaults={"username": (username or "")[:64], "full_name": (full_name or "")[:200], "language": shop.default_language},
+    )
+    lang = customer.language if customer.language in STR else "uz"
+    t = STR[lang]
+    if not geo.valid_coords(lat, lon):
+        return BotReply(text=t["loc_bad"], lang=lang)
+    lat, lon = round(float(lat), 6), round(float(lon), 6)
+    conversation, _ = Conversation.objects.get_or_create(customer=customer)
+    if not (conversation.draft or {}).get("items"):
+        return BotReply(text=t["loc_no_cart"], lang=lang)
+    window_start = timezone.now() - timedelta(minutes=1)
+    if conversation.messages.filter(role=Message.ROLE_USER, created_at__gte=window_start).count() >= settings.RATE_LIMIT_PER_MINUTE:
+        return BotReply(text=t["rate_limit"], lang=lang)
+    address = geo.address_from_location(lat, lon, lang)  # tarmoq chaqiruvi: qulf va tranzaksiyadan tashqarida
+    Message.objects.create(conversation=conversation, role=Message.ROLE_USER, text=f"[Lokatsiya] {geo.coords_text(lat, lon)}")
+    with transaction.atomic():
+        conversation = Conversation.objects.select_for_update().get(pk=conversation.pk)
+        draft = dict(conversation.draft or {})
+        if not draft.get("items"):  # kutish paytida bekor qilingan
+            return BotReply(text=t["loc_no_cart"], lang=lang)
+        draft.update({"address": address, "lat": lat, "lon": lon})
+        complete = bool(draft.get("customer_name") and draft.get("phone"))
+        conversation.draft = draft
+        conversation.awaiting_confirmation = complete
+        conversation.save(update_fields=["draft", "awaiting_confirmation"])
+    if not draft.get("customer_name"):
+        text = f"{t['loc_saved']}\n{t['need_name']}"
+    elif not draft.get("phone"):
+        text = f"{t['loc_saved']}\n{t['need_phone'].format(name=draft['customer_name'].split()[0])}"
+    else:
+        summary, _total = build_summary(shop, draft, lang)
+        text = f"{t['loc_saved']}\n\n{summary}"
+    _save_reply(conversation, text)
+    return BotReply(
+        text=text[:MAX_REPLY_CHARS],
+        awaiting_confirmation=complete,
+        draft_version=draft_version(draft) if complete else "",
+        lang=lang,
+    )
+
 
 def handle_message(shop, telegram_id: int, username: str, full_name: str, text: str, provider=None) -> BotReply:
     text = (text or "").strip()[: settings.MAX_MESSAGE_CHARS]
@@ -467,11 +535,14 @@ def handle_message(shop, telegram_id: int, username: str, full_name: str, text: 
             address, filled_by_rules = clean_text(extra["address"], 300), True
 
     new_draft = {"items": items, "customer_name": name, "phone": phone, "address": address}
+    if address == prev_draft.get("address", "") and geo.valid_coords(prev_draft.get("lat"), prev_draft.get("lon")):
+        new_draft["lat"], new_draft["lon"] = prev_draft["lat"], prev_draft["lon"]  # manzil o'zgarsa, eski koordinata tashlanadi
     state_changed = new_draft != {
         "items": prev_draft.get("items", []),
         "customer_name": prev_draft.get("customer_name", ""),
         "phone": prev_draft.get("phone", ""),
         "address": prev_draft.get("address", ""),
+        **({"lat": prev_draft["lat"], "lon": prev_draft["lon"]} if "lat" in prev_draft else {}),
     }
     was_awaiting = conversation.awaiting_confirmation
     complete = bool(items and name and phone and address)
@@ -542,4 +613,5 @@ def handle_message(shop, telegram_id: int, username: str, full_name: str, text: 
         awaiting_confirmation=awaiting,
         draft_version=draft_version(new_draft) if awaiting else "",
         lang=lang,
+        ask_location=bool(items and name and phone and not address and not order_id),
     )

@@ -617,3 +617,109 @@ class EnvBotSupervisorTests(TransactionTestCase):
         with override_settings(TELEGRAM_BOT_TOKEN=env_token):
             wanted = asyncio.run(runner._active_shops())
         self.assertEqual(wanted, {with_panel.pk: TOKEN, without.pk: env_token})
+
+
+class BotLocationTests(TransactionTestCase):
+    def setUp(self):
+        from django.test import override_settings
+
+        self._geo = override_settings(GEOCODER_ENABLED=False)
+        self._geo.enable()
+        self.addCleanup(self._geo.disable)
+        self.shop = make_shop()
+        self.shop.bot_token = TOKEN
+        self.shop.save()
+        self.p = seed(self.shop)
+        self.customer = Customer.objects.create(shop=self.shop, telegram_id=CUSTOMER_ID, language="uz")
+        self.conv = Conversation.objects.create(
+            customer=self.customer,
+            draft={"items": [{"product_id": self.p["bag"].pk, "quantity": 1}], "customer_name": "Ali", "phone": "+998901112233"},
+        )
+        self.session = FakeSession()
+        self.bot = Bot(token=TOKEN, session=self.session)
+        self.dp = runner.build_dispatcher(self.shop.pk)
+
+    def feed(self, *updates):
+        async def run():
+            for u in updates:
+                await self.dp.feed_update(self.bot, u)
+
+        asyncio.run(run())
+
+    def location_update(self, lat=41.2995, lon=69.2401, chat_type="private"):
+        from aiogram.types import Location
+
+        message = Message(
+            message_id=9,
+            date=datetime.now(),
+            chat=Chat(id=CUSTOMER_ID, type=chat_type),
+            from_user=User(id=CUSTOMER_ID, is_bot=False, first_name="Ali"),
+            location=Location(latitude=lat, longitude=lon),
+        )
+        return Update(update_id=9, message=message)
+
+    def sent(self, cls=SendMessage):
+        return [m for m in self.session.calls if isinstance(m, cls)]
+
+    def test_checkout_asks_address_with_location_button(self):
+        screen = menu.handle_callback(self.shop, CUSTOMER_ID, "a", "A", "m:co")
+        self.assertTrue(screen.ask_location)
+        self.assertIn("lokatsiya", screen.text.lower())
+        markup = runner.location_keyboard("uz")
+        self.assertTrue(markup.keyboard[0][0].request_location)
+        self.assertFalse(markup.keyboard[1][0].request_location)
+
+    def test_location_message_shows_summary_with_confirm_buttons(self):
+        self.feed(self.location_update())
+        sent = self.sent()[-1]
+        self.assertIn("Lokatsiya qabul qilindi", sent.text)
+        buttons = [b.callback_data for row in sent.reply_markup.inline_keyboard for b in row]
+        self.assertTrue(buttons[0].startswith("m:ok:"))
+        self.conv.refresh_from_db()
+        self.assertEqual(self.conv.draft["lat"], 41.2995)
+
+    def test_location_in_group_chat_is_ignored(self):
+        self.feed(self.location_update(chat_type="group"))
+        self.assertEqual(self.sent(), [])
+        self.conv.refresh_from_db()
+        self.assertNotIn("lat", self.conv.draft)
+
+    def test_location_without_cart_is_refused_and_not_stored(self):
+        Conversation.objects.filter(pk=self.conv.pk).update(draft={})
+        self.feed(self.location_update())
+        self.assertIn("mahsulot", self.sent()[-1].text)
+
+    def test_confirmed_order_sends_owner_pin(self):
+        from aiogram.methods import SendLocation
+
+        self.feed(self.location_update())
+        version = [b.callback_data for row in self.sent()[-1].reply_markup.inline_keyboard for b in row][0]
+        call = CallbackQuery(
+            id="1",
+            from_user=User(id=CUSTOMER_ID, is_bot=False, first_name="Ali"),
+            chat_instance="c",
+            message=Message(message_id=5, date=datetime.now(), chat=Chat(id=CUSTOMER_ID, type="private"), text="x"),
+            data=version,
+        )
+        self.feed(Update(update_id=10, callback_query=call))
+        order = Order.objects.get()
+        self.assertEqual((order.latitude, order.longitude), (41.2995, 69.2401))
+        pins = self.sent(SendLocation)
+        self.assertEqual(len(pins), 1)
+        self.assertEqual(pins[0].chat_id, OWNER_ID)
+
+    def test_ai_reply_asking_address_shows_location_keyboard_then_menu_returns(self):
+        from unittest import mock
+
+        from conversations.engine import BotReply
+
+        asking = BotReply(text="Manzilni yozing", ask_location=True, lang="uz")
+        with mock.patch("botapp.runner.handle_message", return_value=asking):
+            self.feed(make_update("2 ta sumka"))
+        kb = self.sent()[-1].reply_markup
+        self.assertTrue(kb.keyboard[0][0].request_location)
+        plain = BotReply(text="Rahmat", lang="uz")
+        with mock.patch("botapp.runner.handle_message", return_value=plain):
+            self.feed(make_update("rahmat", update_id=2))
+        kb = self.sent()[-1].reply_markup
+        self.assertIn("🛍 Katalog", [b.text for row in kb.keyboard for b in row])

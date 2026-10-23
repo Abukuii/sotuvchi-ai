@@ -10,7 +10,7 @@ from orders.models import Order
 from shops.models import Shop
 
 from .engine import AlreadyProcessed, create_order, handle_message, normalize_phone, parse_llm_json, strip_unknown_urls
-from .models import Conversation, Message
+from .models import Conversation, Customer, Message
 
 
 class FakeProvider(LLMProvider):
@@ -476,3 +476,105 @@ class SlotExtractorUnitTests(TestCase):
         self.assertEqual(x("Ko'ylak", {}, allow_name=False), {})
         full = x("ismim Ali, manzil: Jizzax Navoiy 10, tel 901112233", {})
         self.assertEqual((full["customer_name"], full["address"], full["phone"]), ("Ali", "Jizzax Navoiy 10", "901112233"))
+
+
+class LocationTests(TestCase):
+    """Mijoz lokatsiya yuboradi: manzil avtomatik to'ldiriladi, koordinata buyurtmaga o'tadi."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+
+        from shops.models import Shop
+
+        self.shop = Shop.objects.create(owner=User.objects.create_user("loc", password="x12345678!"), name="L")
+        self.product = Product.objects.create(shop=self.shop, name="Ko'ylak", price=100000, stock=5)
+        self.customer = Customer.objects.create(shop=self.shop, telegram_id=11, language="uz")
+        self.conv = Conversation.objects.create(customer=self.customer)
+
+    def set_draft(self, **extra):
+        draft = {"items": [{"product_id": self.product.pk, "quantity": 2}], **extra}
+        Conversation.objects.filter(pk=self.conv.pk).update(draft=draft)
+
+    def send(self, lat=41.2995, lon=69.2401, geocode="Amir Temur ko'chasi, Toshkent"):
+        from unittest import mock
+
+        from .engine import handle_location
+
+        with mock.patch("shops.geo.reverse_geocode", return_value=geocode):
+            return handle_location(self.shop, 11, "u", "U", lat, lon)
+
+    def test_location_fills_address_and_asks_missing_name_first(self):
+        self.set_draft()
+        reply = self.send()
+        self.assertIn("ismingizni", reply.text)
+        self.conv.refresh_from_db()
+        self.assertIn("Amir Temur", self.conv.draft["address"])
+        self.assertEqual((self.conv.draft["lat"], self.conv.draft["lon"]), (41.2995, 69.2401))
+        self.assertFalse(reply.awaiting_confirmation)
+
+    def test_complete_draft_shows_summary_with_confirm(self):
+        self.set_draft(customer_name="Ali", phone="+998901112233")
+        reply = self.send()
+        self.assertTrue(reply.awaiting_confirmation)
+        self.assertTrue(reply.draft_version)
+        self.assertIn("Amir Temur", reply.text)
+        self.conv.refresh_from_db()
+        self.assertTrue(self.conv.awaiting_confirmation)
+
+    def test_geocoder_down_falls_back_to_coordinates(self):
+        self.set_draft(customer_name="Ali", phone="+998901112233")
+        reply = self.send(geocode="")
+        self.conv.refresh_from_db()
+        self.assertEqual(self.conv.draft["address"], "📍 41.29950, 69.24010")
+        self.assertTrue(reply.awaiting_confirmation)
+
+    def test_without_cart_nothing_is_saved(self):
+        reply = self.send()
+        self.assertIn("mahsulot", reply.text)
+        self.conv.refresh_from_db()
+        self.assertEqual(self.conv.draft, {})
+
+    def test_invalid_coordinates_rejected(self):
+        self.set_draft()
+        for lat, lon in ((91, 10), (10, 181), (0, 0), ("x", 1), (float("nan"), 1)):
+            reply = self.send(lat, lon)
+            self.assertIn("o'qib bo'lmadi", reply.text)
+        self.conv.refresh_from_db()
+        self.assertNotIn("lat", self.conv.draft)
+
+    def test_order_gets_coordinates_and_owner_notice_has_map_link(self):
+        from .engine import create_order, order_owner_notice
+
+        self.set_draft(customer_name="Ali", phone="+998901112233")
+        self.send()
+        self.conv.refresh_from_db()
+        order = create_order(self.shop, self.customer, self.conv.draft, "uz", self.conv)
+        self.assertEqual((order.latitude, order.longitude), (41.2995, 69.2401))
+        self.assertIn("https://maps.google.com/?q=41.299500,69.240100", order_owner_notice(self.shop, order, self.customer))
+
+    def test_typed_address_after_location_drops_old_coordinates(self):
+        from .engine import handle_message
+
+        self.set_draft(customer_name="Ali", phone="+998901112233")
+        self.send()
+        reply = {"reply": "Qabul", "intent": "order", "confirmed": False, "draft": {"items": [{"product_id": self.product.pk, "quantity": 2}], "address": "Chilonzor 5-kvartal"}}
+        handle_message(self.shop, 11, "u", "U", "Chilonzor 5-kvartal", provider=FakeProvider(reply))
+        self.conv.refresh_from_db()
+        self.assertEqual(self.conv.draft["address"], "Chilonzor 5-kvartal")
+        self.assertNotIn("lat", self.conv.draft)
+
+    def test_draft_version_changes_with_location(self):
+        from .engine import draft_version
+
+        base = {"items": [], "customer_name": "A", "phone": "1", "address": "x"}
+        self.assertNotEqual(draft_version(base), draft_version({**base, "lat": 1.0, "lon": 2.0}))
+
+    def test_reverse_geocode_disabled_makes_no_network_call(self):
+        from unittest import mock
+
+        from django.test import override_settings
+
+        from shops import geo
+
+        with override_settings(GEOCODER_ENABLED=False), mock.patch("httpx.get", side_effect=AssertionError("tarmoq chaqirilmasin")):
+            self.assertEqual(geo.address_from_location(41.3, 69.2), "📍 41.30000, 69.20000")

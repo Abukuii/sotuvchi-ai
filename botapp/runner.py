@@ -22,7 +22,8 @@ from aiogram.types import (
 from asgiref.sync import sync_to_async
 from django.db import close_old_connections
 
-from conversations.engine import handle_message
+from conversations.engine import STR as ENGINE_STR
+from conversations.engine import handle_location, handle_message
 
 from . import menu, owner
 from shops import botconfig
@@ -74,6 +75,20 @@ def _process(shop_id: int, telegram_id: int, username: str, full_name: str, text
 
 
 @_db_task
+def _location(shop_id, user_id, username, full_name, lat, lon):
+    shop = Shop.objects.filter(pk=shop_id, is_active=True).first()
+    return handle_location(shop, user_id, username, full_name, lat, lon) if shop else None
+
+
+@_db_task
+def _order_location(shop_id: int, order_id: int):
+    from orders.models import Order
+
+    order = Order.objects.filter(pk=order_id, shop_id=shop_id).first()
+    return (order.latitude, order.longitude) if order and order.has_location else None
+
+
+@_db_task
 def _menu_text(shop_id, user_id, username, full_name, text):
     shop = Shop.objects.filter(pk=shop_id, is_active=True).first()
     return (menu.handle_menu_text(shop, user_id, username, full_name, text), shop.effective_owner_id) if shop else (None, None)
@@ -122,6 +137,15 @@ def inline_markup(rows):
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=t, callback_data=d) for t, d in row] for row in rows])
 
 
+def location_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    t = ENGINE_STR.get(lang, ENGINE_STR["uz"])
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=t["loc_btn"], request_location=True)], [KeyboardButton(text=t["loc_cancel"])]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
 def reply_menu(lang: str) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=label) for label in row] for row in menu.menu_labels(lang)],
@@ -152,6 +176,9 @@ async def _notify_owner(bot: Bot, shop_id: int, owner_id, notice, order_id: int 
         markup = inline_markup(rows)
     try:
         await bot.send_message(owner_id, notice, reply_markup=markup)
+        point = await _order_location(shop_id, order_id) if order_id else None
+        if point:  # egasi xaritada ochib, yo'nalish olishi uchun Telegram lokatsiya nuqtasi
+            await bot.send_location(owner_id, latitude=point[0], longitude=point[1])
     except TelegramAPIError as exc:
         logger.warning("Egasiga xabar yuborib bo'lmadi (shop=%s): %s", shop_id, exc)
 
@@ -166,9 +193,8 @@ async def _send_screen(bot: Bot, chat_id: int, screen, lang: str, edit_message: 
             if "not modified" not in str(exc):
                 await bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")  # eski xabar o'chirilgan bo'lishi mumkin
     else:
-        await bot.send_message(
-            chat_id, text, reply_markup=markup if markup else (reply_menu(lang) if screen.show_menu else None), parse_mode="HTML"
-        )
+        keyboard = markup or (location_keyboard(lang) if screen.ask_location else (reply_menu(lang) if screen.show_menu else None))
+        await bot.send_message(chat_id, text, reply_markup=keyboard, parse_mode="HTML")
     if screen.followup_menu:
         await bot.send_message(chat_id, screen.followup_menu, reply_markup=reply_menu(lang))
 
@@ -303,6 +329,26 @@ def build_dispatcher(shop_id: int) -> Dispatcher:
                 except TelegramAPIError:
                     pass
 
+    @router.message(F.location)
+    async def on_location(message: Message, bot: Bot):
+        user = message.from_user
+        if user is None or message.location is None:
+            return
+        try:
+            async with _lock_for(shop_id, user.id):
+                reply = await _location(shop_id, user.id, user.username or "", user.full_name or "", message.location.latitude, message.location.longitude)
+        except Exception:
+            logger.exception("Lokatsiyani qayta ishlashda xato (shop=%s)", shop_id)
+            await message.answer(GENERIC_ERROR)
+            return
+        if reply is None:
+            return
+        markup = None
+        if reply.awaiting_confirmation:
+            tt = menu.T[reply.lang if reply.lang in menu.T else "uz"]
+            markup = inline_markup([[(tt["confirm"], f"m:ok:{reply.draft_version}"), (tt["cancel"], "m:no")]])
+        await message.answer(reply.text[:MAX_TELEGRAM_CHARS], reply_markup=markup or reply_menu(reply.lang))
+
     @router.message(F.text)
     async def on_text(message: Message, bot: Bot):
         user = message.from_user
@@ -327,6 +373,8 @@ def build_dispatcher(shop_id: int) -> Dispatcher:
         if reply.awaiting_confirmation:  # AI buyurtma xulosasini ko'rsatdi: "Ha" yozmasdan tugma bilan tasdiqlash
             tt = menu.T[reply.lang if reply.lang in menu.T else "uz"]
             markup = inline_markup([[(tt["confirm"], f"m:ok:{reply.draft_version}"), (tt["cancel"], "m:no")]])
+        if markup is None:  # manzil so'ralsa lokatsiya tugmasi, aks holda doimiy menyu qaytariladi
+            markup = location_keyboard(reply.lang) if reply.ask_location else reply_menu(reply.lang)
         await message.answer(reply.text[:MAX_TELEGRAM_CHARS], reply_markup=markup)
         await _notify_owner(bot, shop_id, owner_id, reply.owner_notice, reply.order_id)
 

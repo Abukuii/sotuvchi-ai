@@ -651,3 +651,76 @@ class LogRedactionTests(TestCase):
         from .logsafe import redact
 
         self.assertEqual(redact("Buyurtma №5 yuborildi, 14:30 da"), "Buyurtma №5 yuborildi, 14:30 da")
+
+
+class LiveUpdateTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("live", password="x12345678!")
+        self.shop = Shop.objects.create(owner=self.user, name="L")
+        self.client.login(username="live", password="x12345678!")
+
+    def order(self, shop=None, status="new", name="Ali"):
+        return Order.objects.create(shop=shop or self.shop, customer_name=name, phone="1", address="a", total=125000, status=status)
+
+    def state(self, after=0):
+        return self.client.get(reverse("live_state"), {"after": after}).json()
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("live_state"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_returns_only_new_orders_after_marker(self):
+        first = self.order()
+        data = self.state(after=first.pk)
+        self.assertEqual(data["fresh"], [])
+        second = self.order(name="Vali")
+        data = self.state(after=first.pk)
+        self.assertEqual([o["id"] for o in data["fresh"]], [second.pk])
+        self.assertEqual(data["fresh"][0]["url"], reverse("order_detail", args=[second.pk]))
+        self.assertEqual(data["new"], 2)
+
+    def test_no_toasts_on_first_load(self):
+        self.order()
+        self.assertEqual(self.state(after=0)["fresh"], [])  # sahifa ochilganda eski buyurtmalar bildirishnoma bo'lmaydi
+
+    def test_other_shops_orders_invisible(self):
+        other = Shop.objects.create(owner=User.objects.create_user("o2", password="x12345678!"), name="O")
+        self.order(shop=other)
+        data = self.state(after=1)
+        self.assertEqual(data["fresh"], [])
+        self.assertEqual(data["new"], 0)
+        self.assertEqual(data["last_id"], 0)
+
+    def test_token_changes_on_new_order_and_on_status_change(self):
+        o = self.order()
+        t1 = self.state()["token"]
+        self.order()
+        t2 = self.state()["token"]
+        from orders import services
+
+        services.change_status(o, "confirmed")
+        t3 = self.state()["token"]
+        self.assertEqual(len({t1, t2, t3}), 3)
+
+    def test_fresh_limit_and_bad_after_param(self):
+        for _ in range(8):
+            self.order()
+        self.assertEqual(len(self.state(after=1)["fresh"]), 5)
+        self.assertEqual(self.client.get(reverse("live_state"), {"after": "abc"}).status_code, 200)
+        self.assertEqual(self.client.get(reverse("live_state"), {"after": "-5"}).status_code, 200)
+
+    def test_pages_carry_live_markers_and_toast_container(self):
+        html = self.client.get(reverse("orders")).content.decode()
+        self.assertIn('data-live-url="' + reverse("live_state") + '"', html)
+        self.assertIn("data-live-area", html)
+        self.assertIn('id="toasts"', html)
+        self.assertNotIn("data-live-area", self.client.get(reverse("shop_settings")).content.decode())
+
+    def test_customer_name_in_json_is_data_not_markup(self):
+        first = self.order()
+        self.order(name="<img src=x onerror=alert(1)>")
+        name = self.state(after=first.pk)["fresh"][0]["name"]
+        self.assertEqual(name, "<img src=x onerror=alert(1)>")  # JSON'da xom; brauzerda textContent bilan qo'yiladi
+        self.assertIn("textContent", open("static/app.js").read())
+        self.assertNotIn("innerHTML = order", open("static/app.js").read())

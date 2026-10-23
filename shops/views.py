@@ -9,8 +9,9 @@ from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
+from django.urls import reverse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -20,7 +21,7 @@ from conversations.models import Conversation
 from orders import services as order_services
 from orders.models import Order
 
-from . import analytics, audit, notify, throttle
+from . import analytics, audit, context, geo, notify, throttle
 from .forms import CatalogUploadForm, ProductForm, ShopForm, SignupForm
 from .models import AuditEvent, Shop
 
@@ -223,6 +224,8 @@ def order_detail(request, pk):
         reached = {log.from_status for log in order.status_log.all()} & set(order_services.FLOW)
         passed = [v for v in order_services.FLOW if v in reached]
     ctx = {"order": order, "actions": actions, "history": history, "flow": flow, "passed": passed}
+    if order.has_location:
+        ctx["map_url"] = geo.map_url(order.latitude, order.longitude)
     return render(request, "panel/order_detail.html", ctx)
 
 
@@ -322,3 +325,18 @@ def revoke_sessions(request):
     audit.record(request, "sessions_revoked", f"{removed} ta")
     messages.success(request, f"Boshqa seanslar tugatildi: {removed} ta.")
     return redirect("security")
+
+
+@shop_required
+def live_state(request):
+    """Jonli yangilanish: brauzer har ~5 soniyada so'raydi. Yangi buyurtmalar va o'zgarish belgisini qaytaradi."""
+    snap = context.snapshot(request.user)
+    try:
+        after = max(0, int(request.GET.get("after", "0")))
+    except ValueError:
+        after = 0
+    fresh = []
+    if after:
+        for order in Order.objects.filter(shop=request.shop, pk__gt=after).order_by("pk")[:5]:
+            fresh.append({"id": order.pk, "name": order.customer_name, "total": int(order.total), "url": reverse("order_detail", args=[order.pk])})
+    return JsonResponse({"token": snap["token"], "last_id": snap["last_id"], "new": snap["new_count"], "fresh": fresh})

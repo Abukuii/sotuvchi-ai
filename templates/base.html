@@ -11,7 +11,7 @@
 <body{% block body_attrs %}{% if user.is_authenticated %} class="has-sidebar"{% endif %}{% endblock %}>
 {% block chrome_open %}
 {% if user.is_authenticated %}
-<div class="shell">
+<div class="shell" data-live-url="{% url 'live_state' %}" data-live-after="{{ live_after|default:0 }}" data-live-token="{{ live_token }}">
   <aside class="sidebar" id="sidebar" aria-label="Asosiy menyu">
     <div class="sb-head">
       <a class="brand" href="{% url 'dashboard' %}"><span class="brand-text">Sotuvchi AI</span></a>
@@ -41,7 +41,7 @@
       <button type="button" class="icon-btn" data-sidebar-open aria-controls="sidebar" aria-expanded="false" aria-label="Menyuni ochish"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{% include "partials/icons.html" with name="menu" %}</svg></button>
       <a class="brand" href="{% url 'dashboard' %}">Sotuvchi AI</a>
     </header>
-    <main>
+    <main{% block main_attrs %}{% endblock %}>
 {% else %}
 {% include "partials/public_header.html" %}
 <main>
@@ -54,6 +54,7 @@
     </main>
   </div>
 </div>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 {% else %}
 </main>
 {% endif %}

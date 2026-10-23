@@ -1,7 +1,6 @@
 """Analitika (aniq raqamlar), xavfsizlik sarlavhalari, parol almashtirish va rang palitrasi testlari."""
 import re
 from datetime import date, datetime
-from decimal import Decimal
 from pathlib import Path
 
 from django.conf import settings

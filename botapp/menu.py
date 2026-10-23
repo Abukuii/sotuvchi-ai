@@ -169,6 +169,7 @@ class Screen:
     toast: str = ""  # callback.answer() uchun qisqa xabar
     owner_notice: str | None = None
     owner_order_id: int | None = None  # egasiga yuboriladigan xabarga holat tugmalarini qo'shish uchun
+    ask_location: bool = False  # "📍 Lokatsiya yuborish" tugmali klaviatura
     show_menu: bool = False  # pastki doimiy menyuni ham yuborish
     replace: bool = True  # True: eski xabarni tahrirlash, False: yangi xabar
     deleted: bool = False
@@ -468,6 +469,8 @@ def _prefill_from_last_order(ctx: Ctx) -> bool:
     for key, value in (("customer_name", last.customer_name), ("phone", last.phone), ("address", last.address)):
         if not draft.get(key) and value:
             draft[key], changed = value, True
+            if key == "address" and last.has_location:  # manzil bilan birga uning koordinatasi ham
+                draft["lat"], draft["lon"] = last.latitude, last.longitude
     if changed:
         ctx.conv.draft = draft
         ctx.conv.save(update_fields=["draft"])
@@ -490,7 +493,7 @@ def checkout(ctx: Ctx) -> Screen:
     if not phone:
         return Screen(esc(s["need_phone"].format(name=name.split()[0])), cancel_row, replace=False)
     if not address:
-        return Screen(esc(s["need_address"]), cancel_row, replace=False)
+        return Screen(esc(s["need_address"]), cancel_row, ask_location=True, replace=False)
     summary, _ = build_summary(ctx.shop, draft, ctx.lang)
     ctx.conv.draft = draft
     ctx.conv.awaiting_confirmation = True

@@ -107,6 +107,8 @@ else:
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
+            # Veb-server, bot jarayoni va jonli yangilanish bir vaqtda ishlaydi: WAL o'qish/yozishni to'smaydi
+            "OPTIONS": {"timeout": 20, "init_command": "PRAGMA journal_mode=WAL;"},
         }
     }
 
@@ -183,6 +185,9 @@ LOGGING = {
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_BOT_SHOP_ID = int(os.environ["TELEGRAM_BOT_SHOP_ID"]) if os.environ.get("TELEGRAM_BOT_SHOP_ID", "").isdigit() else None
 TELEGRAM_OWNER_ID = int(os.environ["TELEGRAM_OWNER_ID"]) if os.environ.get("TELEGRAM_OWNER_ID", "").isdigit() else None
+
+# Lokatsiyadan manzil topish (OpenStreetMap Nominatim, bepul). 0 = o'chirilgan: faqat koordinata saqlanadi
+GEOCODER_ENABLED = env_bool("GEOCODER_ENABLED", True)
 
 # --- LLM ---
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "mock").strip().lower()

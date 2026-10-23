@@ -59,6 +59,7 @@ Bot sozlamalari (token, yoqish/o'chirish) o'zgarsa, `runbots` ~15 soniyada o'zi 
 | `TELEGRAM_BOT_SHOP_ID` | Ixtiyoriy: `.env` tokeni qaysi do'konga tegishli (bo'sh = tokeni yo'q birinchi faol do'kon) |
 | `TELEGRAM_OWNER_ID` | Ixtiyoriy: egasining Telegram ID si (ulash kodisiz bildirishnoma olish) |
 | `GEMINI_API_KEY` / `GROQ_API_KEY` | AI kalitlari faqat `.env` dan o'qiladi, kodda va bazada saqlanmaydi |
+| `GEOCODER_ENABLED` | `1` (sukut): lokatsiyadan manzil topish (Nominatim). `0` — o'chirish |
 | `DJANGO_DEBUG` | `1` mahalliy ishlab chiqish uchun |
 | `DJANGO_ALLOWED_HOSTS` | Vergul bilan ajratilgan hostlar |
 | `DATABASE_URL` | Bo'sh = SQLite. PostgreSQL: `postgres://user:pass@host:5432/db` |
@@ -80,6 +81,16 @@ Oqim: **Yangi → Qabul qilindi → Yuborildi → Yetkazildi**; bekor qilish Yan
 
 - **Panelda:** buyurtma sahifasida faqat mumkin bo'lgan tugmalar, bosqichlar chizig'i, tarix; ro'yxatda holat tablari (soni bilan); yon panelda yangi buyurtmalar belgisi.
 - **Telegramda (egasi):** yangi buyurtma xabari tugmalar bilan keladi (Qabul / Yuborildi / Yetkazildi / Bekor). Faqat ulangan ega bosa oladi, buyurtma shu do'konniki bo'lishi shart.
+
+## Lokatsiyadan manzil
+
+Mijoz manzil o'rniga **📍 lokatsiya** yuborishi mumkin (manzil so'ralganda pastda "📍 Lokatsiyani yuborish" tugmasi chiqadi, menyu orqali ham, AI suhbat orqali ham). Bot koordinatani manzil matniga aylantiradi (OpenStreetMap Nominatim, bepul; ishlamasa "📍 41.29950, 69.24010" yoziladi), mijozga xulosani tasdiqlatadi. Buyurtma koordinata bilan saqlanadi: egasiga xabarda xarita havolasi va Telegram lokatsiya nuqtasi keladi, panelda "Xaritada ochish" havolasi bor. Yozilgan manzil lokatsiyadan keyin o'zgartirilsa, eski koordinata tashlanadi.
+
+- Maxfiylik: lokatsiya faqat buyurtma uchun saqlanadi. Nominatim ga faqat koordinata ketadi (mijoz ismi/telefoni emas). `GEOCODER_ENABLED=0` bo'lsa tashqariga hech narsa ketmaydi. Mijoz ma'lumotini o'chirish buyurtma yozuvlarini (koordinata ham) saqlab qoladi.
+
+## Jonli panel
+
+Panel sahifani yangilamasdan ishlaydi: brauzer har ~5 soniyada yengil so'rov (`/orders/live/`) yuboradi; yangi buyurtma kelsa toast bildirishnoma, yon paneldagi belgi va sahifa sarlavhasidagi `(N)` yangilanadi, Boshqaruv/Buyurtmalar/Buyurtma sahifalari o'zi yangilanadi (Telegramda egasi holatni o'zgartirsa ham). Forma bilan ishlayotganda sahifa almashtirilmaydi, tab yashirin bo'lsa so'rov to'xtaydi, xatoda kutish oshadi, seans tugasa to'xtaydi.
 
 ## Telegram bot tugmalari
 
@@ -134,11 +145,13 @@ Asosiy qarorlar:
 python manage.py test
 ```
 
-275 ta test (SQLite va PostgreSQL da o'tgan): analitika (davr chegaralari, bekorlar, oldingi davr bilan solishtirish, kechki xabarlar ulushi), CSP/sarlavhalar, rang palitrasi (faqat oq/qora/yashil),  Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
+298 ta test (SQLite va PostgreSQL da o'tgan): analitika (davr chegaralari, bekorlar, oldingi davr bilan solishtirish, kechki xabarlar ulushi), CSP/sarlavhalar, rang palitrasi (faqat oq/qora/yashil),  Excel import (narx formatlari, xato qatorlar, zip-bomba, katta qiymatlar), qidiruv (alifbolar, qo'shimchalar), dvigatel xavfsizligi (soxta `product_id`, tasdiqsiz buyurtma, ikki marta tasdiq, noto'g'ri JSON, LLM xatosi, begona havolalar), token shifrlash, kirish cheklovi, panel va do'konlararo izolyatsiya.
 
 ## Cheklovlar (halol ro'yxat)
 
 - **Telegram integratsiyasi va Gemini/Groq/Ollama chaqiruvlari jonli sinalmagan.** Ular yozilgan va import/handler darajasida tekshirilgan, lekin haqiqiy token va kalit bilan kod yozish paytida ishga tushirilmagan. Birinchi ishga tushirishda kichik tuzatishlar kerak bo'lishi mumkin. Dvigatelning o'zi (`manage.py chat` va testlar) `mock` va soxta provayderlar bilan to'liq tekshirilgan.
+- **Lokatsiya (Telegram) va Nominatim geokodlash jonli sinalmagan**: Telegram qismi soxta sessiya bilan testlangan, Nominatim chaqiruvi sinovda o'rniga qo'yilgan. Nominatim ommaviy xizmat (taxminan sekundiga 1 so'rov, `User-Agent` bilan); katta yuklama uchun o'z geokoderingizni ulang yoki `GEOCODER_ENABLED=0` qiling.
+- Jonli panel WebSocket emas, qisqa so'rov (polling, ~5 soniya): kechikish bir necha soniya, har ochiq tab uchun ~12 yengil so'rov/daqiqa.
 - `mock` rejim real AI emas: erkin muloqotni tushunmaydi.
 - Bot tokeni shifrlangan, lekin kalit `SECRET_KEY`/`TOKEN_ENCRYPTION_KEY` dan olinadi: kalitni yo'qotsangiz tokenlarni qayta kiritasiz. Jiddiy ishlab chiqarishda sir-saqlash xizmati (Vault/KMS) yaxshiroq.
 - Kirish cheklovi Django keshida (jarayon ichida). Bir nechta server bo'lsa Redis/Memcached sozlash kerak. Parolni tiklash (email) yo'q.
